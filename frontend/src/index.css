@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900 min-h-screen;
+  }
+  
+  h1 {
+    @apply text-2xl font-bold mb-4;
+  }
+  
+  h2 {
+    @apply text-xl font-semibold mb-3;
+  }
+  
+  h3 {
+    @apply text-lg font-medium mb-2;
+  }
+  
+  button {
+    @apply px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors;
+  }
+}
+
+/* Print styles that work regardless of Tailwind being loaded */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+  
+  .print-content, 
+  .print-content * {
+    visibility: visible !important;
+  }
+  
+  .print-content {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 8.5in !important;
+    margin: 0 auto !important;
+    background-color: white !important;
+    color: black !important;
+    padding: 20px !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+  
+  /* Additional print-specific styles */
+  .print-content table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+  
+  .print-content th,
+  .print-content td {
+    border: 1px solid #000 !important;
+    padding: 8px !important;
+  }
+  
+  .print-content .border-x {
+    border-left: 1px solid #000 !important;
+    border-right: 1px solid #000 !important;
+  }
+  
+  .print-content .border-b {
+    border-bottom: 1px solid #000 !important;
+  }
+}
+
+/* Extra small text size for compact table buttons */
+.text-xxs {
+  font-size: 0.625rem; /* 10px */
+  line-height: 0.75rem; /* 12px */
+}
+
+/* Custom scrollbar for table grid when there are many tables */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #ddd;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #ccc;
+}
+
+/* Firefox scrollbar */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #ddd #f1f1f1;
+}
