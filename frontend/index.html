@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Promise polyfill for better browser compatibility -->
+    <script>
+      // Simple Promise polyfill fallback
+      if (typeof Promise === 'undefined') {
+        window.Promise = function(executor) {
+          var callbacks = [];
+          var state = 'pending';
+          var value;
+          
+          function resolve(result) {
+            if (state !== 'pending') return;
+            state = 'fulfilled';
+            value = result;
+            callbacks.forEach(function(callback) {
+              setTimeout(function() {
+                callback.onFulfilled(value);
+              }, 0);
+            });
+          }
+          
+          function reject(error) {
+            if (state !== 'pending') return;
+            state = 'rejected';
+            value = error;
+            callbacks.forEach(function(callback) {
+              setTimeout(function() {
+                callback.onRejected ? callback.onRejected(value) : console.error(value);
+              }, 0);
+            });
+          }
+          
+          try {
+            executor(resolve, reject);
+          } catch(e) {
+            reject(e);
+          }
+          
+          this.then = function(onFulfilled, onRejected) {
+            return new Promise(function(resolve, reject) {
+              callbacks.push({
+                onFulfilled: function(value) {
+                  try {
+                    if (typeof onFulfilled === 'function') {
+                      resolve(onFulfilled(value));
+                    } else {
+                      resolve(value);
+                    }
+                  } catch(e) {
+                    reject(e);
+                  }
+                },
+                onRejected: function(reason) {
+                  try {
+                    if (typeof onRejected === 'function') {
+                      resolve(onRejected(reason));
+                    } else {
+                      reject(reason);
+                    }
+                  } catch(e) {
+                    reject(e);
+                  }
+                }
+              });
+              
+              if (state === 'fulfilled') {
+                setTimeout(function() {
+                  callbacks[callbacks.length - 1].onFulfilled(value);
+                }, 0);
+              } else if (state === 'rejected') {
+                setTimeout(function() {
+                  if (callbacks[callbacks.length - 1].onRejected) {
+                    callbacks[callbacks.length - 1].onRejected(value);
+                  }
+                }, 0);
+              }
+            });
+          };
+          
+          this.catch = function(onRejected) {
+            return this.then(null, onRejected);
+          };
+        };
+        
+        Promise.resolve = function(value) {
+          return new Promise(function(resolve) {
+            resolve(value);
+          });
+        };
+        
+        Promise.reject = function(reason) {
+          return new Promise(function(resolve, reject) {
+            reject(reason);
+          });
+        };
+      }
+    </script>
+    <title>Bill Receipt Generator</title>
+    <style type="text/css" media="print">
+      @page {
+        size: 80mm auto !important;
+        margin: 0mm !important;
+      }
+      html, body {
+        width: 80mm !important;
+        max-width: 80mm !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        font-family: 'Courier New', monospace !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+      
+      /* Fix for print preview */
+      .receipt-preview,
+      .receipt-container {
+        width: 100% !important;
+        max-width: 80mm !important;
+        overflow: visible !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
+
+      /* Ensure tables print correctly */
+      table, tr, td, th {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
+
+      /* Force black text for better readability on thermal printers */
+      .receipt-container * {
+        color: black !important;
+        background: white !important;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
