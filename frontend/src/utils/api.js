@@ -120,10 +120,12 @@ export const del = async (endpoint) => {
 };
 
 // Export all API methods 
-export default {
+const api = {
   get,
   post,
   put,
-  delete: del,
+  del,
   getApiUrl
-}; 
+};
+
+export default api; 
