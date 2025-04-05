@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import * as api from "../../utils/api";
+import { getAllItems, createItem, updateItem, deleteItem } from "../../api/api";
 
 const ItemManagement = () => {
   const [items, setItems] = useState([]);
@@ -22,11 +22,11 @@ const ItemManagement = () => {
         setBackendStatus("connecting");
         
         try {
-          const data = await api.get("/items");
+          const data = await getAllItems();
           setItems(data);
           setBackendStatus("connected");
         } catch (error) {
-          if (error.message.includes("404")) {
+          if (error.response && error.response.status === 404) {
             setBackendStatus("not-found");
             setError("The items API endpoint was not found. Make sure your backend server is running and has the /api/items endpoint.");
           } else {
@@ -96,14 +96,14 @@ const ItemManagement = () => {
       
       if (editingItem) {
         // Update existing item
-        result = await api.put(`/items/${editingItem._id}`, formData);
+        result = await updateItem(editingItem._id, formData);
         // Update the item in the local state
         setItems(items.map(item => 
           item._id === editingItem._id ? result : item
         ));
       } else {
         // Create new item
-        result = await api.post("/items", formData);
+        result = await createItem(formData);
         // Add the new item to the local state
         setItems([...items, result]);
       }
@@ -113,7 +113,7 @@ const ItemManagement = () => {
     } catch (error) {
       console.error("Error saving item:", error);
       
-      if (error.message.includes("404")) {
+      if (error.response && error.response.status === 404) {
         setError("The API endpoint was not found. Make sure your backend server has the correct routes.");
       } else {
         setError("Failed to save item. Please try again.");
@@ -130,14 +130,14 @@ const ItemManagement = () => {
     
     if (window.confirm("Are you sure you want to delete this item?")) {
       try {
-        await api.del(`/items/${itemId}`);
+        await deleteItem(itemId);
         
         // Remove the item from the local state
         setItems(items.filter(item => item._id !== itemId));
       } catch (error) {
         console.error("Error deleting item:", error);
         
-        if (error.message.includes("404")) {
+        if (error.response && error.response.status === 404) {
           setError("The API endpoint was not found. Make sure your backend server has the correct routes.");
         } else {
           setError("Failed to delete item. Please try again.");

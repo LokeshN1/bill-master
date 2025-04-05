@@ -5,7 +5,7 @@ import ItemList from "../components/ItemList";
 import Bill from "../components/Bill";
 import CafeHeader from "../components/CafeHeader";
 import CafeFooter from "../components/CafeFooter";
-import * as api from "../utils/api";
+import { getCafeInfo } from "../api/api";
 
 function Home() {
   const [cafeInfo, setCafeInfo] = useState({
@@ -23,7 +23,7 @@ function Home() {
       try {
         setLoading(true);
         try {
-          const data = await api.get("/info");
+          const data = await getCafeInfo();
           setCafeInfo(data);
         } catch (error) {
           // Use default values if endpoint not found
