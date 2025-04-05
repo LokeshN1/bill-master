@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import * as api from '../utils/api';
+import { getAllItems, createBill, updateBill } from '../api/api';
 
 // Create the context
 export const BillContext = createContext();
@@ -18,7 +18,7 @@ export const BillProvider = ({ children }) => {
   useEffect(() => {
     const fetchItems = async () => {
       try {
-        const data = await api.get('/items');
+        const data = await getAllItems();
         setItems(data);
       } catch (error) {
         console.error('Error fetching items:', error);
@@ -106,11 +106,11 @@ export const BillProvider = ({ children }) => {
 
       if (savedBillId) {
         // If the bill was already saved, update it instead of creating a new one
-        response = await api.put(`/bills/${savedBillId}`, billData);
+        response = await updateBill(savedBillId, billData);
         console.log('Bill updated successfully:', response);
       } else {
         // Send bill to the backend for storage as a new bill
-        response = await api.post('/bills', billData);
+        response = await createBill(billData);
         console.log('Bill saved successfully:', response);
         
         // Store the ID of the saved bill for future updates

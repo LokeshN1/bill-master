@@ -66,7 +66,7 @@ const ItemList = () => {
         {/* Category Tabs */}
         <div className="flex overflow-x-auto pb-2 -mx-1 hide-scrollbar">
           {categories.map(category => (
-            <button
+            <button 
               key={category}
               onClick={() => setActiveCategory(category)}
               className={`whitespace-nowrap px-3 py-1.5 mx-1 rounded-full text-sm transition-colors ${
@@ -173,4 +173,4 @@ styles.textContent = `
 `;
 document.head.appendChild(styles);
 
-export default ItemList;
+export default ItemList; 

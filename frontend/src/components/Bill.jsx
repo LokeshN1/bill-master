@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useReactToPrint } from 'react-to-print';
 import { useBill } from '../context/BillContext';
-import api from '../utils/api';
+import { getCafeInfo } from '../api/api';
 import PrintableReceipt from './PrintableReceipt';
 import SimpleReceipt from './SimpleReceipt';
 
@@ -18,7 +18,7 @@ const Bill = () => {
     const fetchCafeDetails = async () => {
       try {
         setLoading(true);
-        const data = await api.get('/info');
+        const data = await getCafeInfo();
         setCafeDetails(data);
       } catch (error) {
         console.error('Error fetching cafe details:', error);

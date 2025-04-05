@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import api from "../../utils/api";
+import { getAllBills, getBillById, deleteBill, getCafeInfo } from "../../api/api";
 import { format } from "date-fns";
 import PrintableReceipt from "../../components/PrintableReceipt";
 import SimpleReceipt from "../../components/SimpleReceipt";
@@ -24,7 +24,7 @@ const BillManagement = () => {
     const fetchBills = async () => {
       try {
         setLoading(true);
-        const data = await api.get('/bills');
+        const data = await getAllBills();
         setBills(data);
         setError(null);
       } catch (err) {
@@ -42,7 +42,7 @@ const BillManagement = () => {
   useEffect(() => {
     const fetchCafeDetails = async () => {
       try {
-        const data = await api.get('/info');
+        const data = await getCafeInfo();
         setCafeDetails(data);
       } catch (error) {
         console.error('Error fetching cafe details:', error);
@@ -74,7 +74,7 @@ const BillManagement = () => {
     }
 
     try {
-      await api.del(`/bills/${billId}`);
+      await deleteBill(billId);
       setBills(bills.filter(bill => bill._id !== billId));
       if (selectedBill && selectedBill._id === billId) {
         setSelectedBill(null);
