@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import * as api from "../../utils/api";
+import { getCafeInfo, updateCafeInfo } from "../../api/api";
+import { axiosInstance } from "../../lib/axios";
 
 const CafeInfoManagement = () => {
   const [cafeInfo, setCafeInfo] = useState({
@@ -22,11 +23,11 @@ const CafeInfoManagement = () => {
         setBackendStatus("connecting");
         
         try {
-          const data = await api.get("/info");
+          const data = await getCafeInfo();
           setCafeInfo(data);
           setBackendStatus("connected");
         } catch (error) {
-          if (error.message.includes("404")) {
+          if (error.response && error.response.status === 404) {
             setBackendStatus("not-found");
             // Endpoint doesn't exist, use default values
             setCafeInfo({
@@ -81,8 +82,8 @@ const CafeInfoManagement = () => {
       setError(null);
       setSuccessMessage(null);
       
-      const result = await api.post("/info", cafeInfo);
-      setCafeInfo(result);
+      const response = await axiosInstance.post(`/info`, cafeInfo);
+      setCafeInfo(response.data);
       setBackendStatus("connected");
       setSuccessMessage("Café information created successfully!");
       
@@ -117,7 +118,7 @@ const CafeInfoManagement = () => {
       }
       
       try {
-        const result = await api.put("/info", cafeInfo);
+        const result = await updateCafeInfo(cafeInfo);
         setCafeInfo(result);
         setSuccessMessage("Café information updated successfully!");
         
@@ -126,7 +127,7 @@ const CafeInfoManagement = () => {
           setSuccessMessage(null);
         }, 3000);
       } catch (error) {
-        if (error.message.includes("404")) {
+        if (error.response && error.response.status === 404) {
           // Try to create the endpoint instead
           const created = await createInfoEndpoint();
           if (!created) return;
