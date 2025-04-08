@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { getAllBills, getBillById, deleteBill, getCafeInfo } from "../../api/api";
 import { format } from "date-fns";
 import PrintableReceipt from "../../components/PrintableReceipt";
-import SimpleReceipt from "../../components/SimpleReceipt";
+import KOTReceipt from "../../components/KOTReceipt";
 
 const BillManagement = () => {
   const [bills, setBills] = useState([]);
@@ -64,7 +64,7 @@ const BillManagement = () => {
 
   // Format currency
   const formatCurrency = (amount) => {
-    return "₹" + Number(amount).toFixed(2);
+    return Number(amount).toFixed(2);
   };
 
   // Handle bill deletion
@@ -99,13 +99,13 @@ const BillManagement = () => {
     setSelectedBill(bill);
   };
 
-  // Print bill
+  // Print selected bill
   const handlePrint = () => {
     if (!selectedBill) return;
     
     setIsPrinting(true);
     
-    // Create a print window
+    // Open a new window for printing
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       alert('Please allow popups for this website to print receipts');
@@ -113,8 +113,8 @@ const BillManagement = () => {
       return;
     }
     
-    // Prepare the receipt content based on format
     let receiptContent = '';
+    
     if (selectedBill.receiptFormat === 'detailed') {
       // Detailed receipt HTML
       receiptContent = `
@@ -122,15 +122,16 @@ const BillManagement = () => {
           <div class="receipt-header text-center mb-4">
             <h1 class="text-xl font-bold">${cafeDetails.name}</h1>
             <p class="text-sm">${cafeDetails.address}</p>
-            <p class="text-sm">Phone: ${cafeDetails.phone}</p>
-            ${cafeDetails.email ? `<p class="text-sm">Email: ${cafeDetails.email}</p>` : ''}
+            <p class="text-sm">PH.: ${cafeDetails.contact || cafeDetails.phone}</p>
           </div>
           
-          <div class="receipt-info mb-4">
+          <div class="receipt-info mb-2">
             <div class="grid grid-cols-2 text-sm">
-              <div><strong>Bill #:</strong> ${selectedBill.billNumber}</div>
-              <div><strong>Date:</strong> ${formatDate(selectedBill.createdAt)}</div>
-              <div><strong>Table:</strong> ${selectedBill.tableNo}</div>
+              <div>Date: ${format(new Date(selectedBill.createdAt), 'dd/MM/yy')}</div>
+              <div>Dine In: ${selectedBill.tableNo}</div>
+              <div>${format(new Date(selectedBill.createdAt), 'HH:mm')}</div>
+              <div>Bill No.: ${selectedBill.billNumber}</div>
+              <div>Cashier: ${cafeDetails.cashierName || 'Staff'}</div>
             </div>
           </div>
           
@@ -140,9 +141,9 @@ const BillManagement = () => {
             <thead>
               <tr class="border-b">
                 <th class="text-left py-1">Item</th>
-                <th class="text-center py-1">Qty</th>
+                <th class="text-center py-1">Qty.</th>
                 <th class="text-right py-1">Price</th>
-                <th class="text-right py-1">Total</th>
+                <th class="text-right py-1">Amount</th>
               </tr>
             </thead>
             <tbody>
@@ -159,35 +160,38 @@ const BillManagement = () => {
           
           <hr class="my-2 border-gray-300" />
           
-          <div class="total-section mb-4">
+          <div class="mb-2">
             <div class="flex justify-between">
-              <span class="font-bold">Total:</span>
+              <span>Total Qty: ${selectedBill.items.reduce((sum, item) => sum + item.quantity, 0)}</span>
+              <span class="font-medium">Sub Total</span>
+              <span>${formatCurrency(selectedBill.totalAmount)}</span>
+            </div>
+          </div>
+          
+          <div class="total-section mb-4">
+            <div class="flex justify-between text-lg">
+              <span class="font-bold">Grand Total</span>
               <span class="font-bold">${formatCurrency(selectedBill.totalAmount)}</span>
             </div>
           </div>
           
           <div class="receipt-footer text-center text-xs mt-4">
-            <p>Thank you for your visit!</p>
-            <p>Please come again</p>
-            <p class="mt-2">* This is a computer generated receipt *</p>
+            <p>Thanks For Visiting Us !!</p>
           </div>
         </div>
       `;
     } else {
-      // Simple receipt HTML
+      // Simple KOT receipt HTML
+      const kotNumber = `KOT - ${selectedBill.billNumber.split('-')[1] || selectedBill.billNumber}`;
+      
       receiptContent = `
         <div class="receipt-container">
           <div class="receipt-header text-center mb-4">
-            <h1 class="text-xl font-bold">${cafeDetails.name}</h1>
-            <p class="text-sm">${cafeDetails.address}</p>
-          </div>
-          
-          <div class="receipt-info mb-4">
-            <div class="grid grid-cols-2 text-sm">
-              <div><strong>Bill #:</strong> ${selectedBill.billNumber}</div>
-              <div><strong>Date:</strong> ${formatDate(selectedBill.createdAt)}</div>
-              <div><strong>Table:</strong> ${selectedBill.tableNo}</div>
-            </div>
+            <h1 class="text-xl font-bold">KOT</h1>
+            <p class="text-sm">${format(new Date(selectedBill.createdAt), 'dd/MM/yy')} ${format(new Date(selectedBill.createdAt), 'HH:mm')}</p>
+            <p class="text-sm">${kotNumber}</p>
+            <p class="text-sm">Dine In</p>
+            <p class="text-sm">Table No: ${selectedBill.tableNo}</p>
           </div>
           
           <hr class="my-2 border-gray-300" />
@@ -196,23 +200,20 @@ const BillManagement = () => {
             <thead>
               <tr class="border-b">
                 <th class="text-left py-1">Item</th>
-                <th class="text-center py-1">Qty</th>
+                <th class="text-left py-1">Special Note:</th>
+                <th class="text-center py-1">Qty.</th>
               </tr>
             </thead>
             <tbody>
               ${selectedBill.items.map(item => `
                 <tr class="border-b border-gray-200">
                   <td class="py-1">${item.name}</td>
+                  <td class="py-1 text-sm">--</td>
                   <td class="text-center py-1">${item.quantity}</td>
                 </tr>
               `).join('')}
             </tbody>
           </table>
-          
-          <div class="receipt-footer text-center text-xs mt-4">
-            <p>Thank you for your visit!</p>
-            <p>Please come again</p>
-          </div>
         </div>
       `;
     }
@@ -311,7 +312,7 @@ const BillManagement = () => {
                         {bill.items.length} {bill.items.length === 1 ? 'item' : 'items'}
                       </p>
                       <span className={`inline-block px-2 py-1 text-xs rounded-full ${bill.receiptFormat === 'detailed' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
-                        {bill.receiptFormat === 'detailed' ? 'Detailed' : 'Simple'}
+                        {bill.receiptFormat === 'detailed' ? 'Detailed' : 'KOT'}
                       </span>
                     </div>
                   </div>
@@ -366,7 +367,7 @@ const BillManagement = () => {
                 <div className="flex justify-between items-center mb-4">
                   <h4 className="font-bold text-xl">{selectedBill.billNumber}</h4>
                   <div className={`px-3 py-1 rounded-full text-sm ${selectedBill.receiptFormat === 'detailed' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
-                    {selectedBill.receiptFormat === 'detailed' ? 'Detailed Receipt' : 'Simple Receipt'}
+                    {selectedBill.receiptFormat === 'detailed' ? 'Detailed Receipt' : 'KOT Receipt'}
                   </div>
                 </div>
                 

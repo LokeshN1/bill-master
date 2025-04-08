@@ -3,16 +3,21 @@ import { useReactToPrint } from 'react-to-print';
 import { useBill } from '../context/BillContext';
 import { getCafeInfo } from '../api/api';
 import PrintableReceipt from './PrintableReceipt';
-import SimpleReceipt from './SimpleReceipt';
+import KOTReceipt from './KOTReceipt';
 
 const Bill = () => {
-  const { bill, clearBill, saveBill, savedBillId } = useBill();
+  const { bill, clearBill, saveBill, savedBillId, selectedTable } = useBill();
   const [cafeDetails, setCafeDetails] = useState({ name: '', address: '', phone: '', email: '' });
   const [loading, setLoading] = useState(true);
   const [billNumber, setBillNumber] = useState(`BILL-${Math.floor(Math.random() * 1000)}`);
   const [receiptFormat, setReceiptFormat] = useState('detailed'); // 'detailed' or 'simple'
   const [isSaving, setIsSaving] = useState(false);
-  const componentRef = useRef();
+  const [isPrintingKOT, setIsPrintingKOT] = useState(false);
+  const displayRef = useRef();
+  const detailedRef = useRef();
+  const kotRef = useRef();
+  // Get table number from context or default to 1
+  const tableNo = selectedTable || 1;
 
   useEffect(() => {
     const fetchCafeDetails = async () => {
@@ -47,8 +52,8 @@ const Bill = () => {
     }
   }, [savedBillId, bill, billNumber]);
 
-  // Safe printing function that handles Promise issues
-  const safePrint = useCallback(() => {
+  // Safe printing function for detailed receipt
+  const safePrintDetailed = useCallback(() => {
     return new Promise((resolve) => {
       // Create a print iframe to avoid issues with the main page
       const printFrame = document.createElement('iframe');
@@ -58,13 +63,12 @@ const Bill = () => {
       printFrame.onload = () => {
         try {
           // Copy styles to the iframe
-          const styleSheets = document.styleSheets;
           const frameDoc = printFrame.contentDocument;
           if (!frameDoc) throw new Error('Cannot access iframe document');
           
           // Copy the receipt HTML
-          if (componentRef.current) {
-            frameDoc.body.innerHTML = componentRef.current.innerHTML;
+          if (detailedRef.current) {
+            frameDoc.body.innerHTML = detailedRef.current.innerHTML;
             
             // Add print styles
             const style = frameDoc.createElement('style');
@@ -72,7 +76,45 @@ const Bill = () => {
               @page { size: 80mm auto !important; margin: 0mm !important; }
               body { width: 80mm !important; font-family: 'Courier New', monospace !important; }
               .no-print { display: none !important; }
+              .receipt-container { padding: 10px !important; }
+              .text-center { text-align: center !important; }
+              .text-left { text-align: left !important; }
+              .text-right { text-align: right !important; }
+              .text-sm { font-size: 12px !important; }
+              .text-xs { font-size: 10px !important; }
+              .text-base { font-size: 14px !important; }
+              .text-lg { font-size: 16px !important; }
+              .text-xl { font-size: 18px !important; }
+              .font-bold { font-weight: bold !important; }
+              .font-medium { font-weight: 500 !important; }
+              .mb-1 { margin-bottom: 4px !important; }
+              .mb-2 { margin-bottom: 8px !important; }
+              .mb-3 { margin-bottom: 12px !important; }
+              .mb-4 { margin-bottom: 16px !important; }
+              .my-2 { margin-top: 8px !important; margin-bottom: 8px !important; }
+              .mt-2 { margin-top: 8px !important; }
+              .mt-4 { margin-top: 16px !important; }
+              .py-0.5 { padding-top: 2px !important; padding-bottom: 2px !important; }
+              .py-1 { padding-top: 4px !important; padding-bottom: 4px !important; }
+              .border-b { border-bottom: 1px solid #ddd !important; }
+              .border-gray-100 { border-color: #f7fafc !important; }
+              .border-gray-200 { border-color: #edf2f7 !important; }
+              .border-gray-300 { border-color: #e2e8f0 !important; }
+              .w-full { width: 100% !important; }
+              .w-1/2 { width: 50% !important; }
+              .w-12 { width: 3rem !important; }
+              .w-16 { width: 4rem !important; }
+              .grid { display: grid !important; }
+              .grid-cols-2 { grid-template-columns: 1fr 1fr !important; }
+              .flex { display: flex !important; }
+              .justify-between { justify-content: space-between !important; }
+              .break-words { word-wrap: break-word !important; }
+              .whitespace-normal { white-space: normal !important; }
+              .gap-0.5 { gap: 2px !important; }
+              .leading-tight { line-height: 1.25 !important; }
+              table { width: 100% !important; border-collapse: collapse !important; }
               table, tr, td, th { page-break-inside: avoid !important; }
+              th, td { vertical-align: top !important; }
               * { color: black !important; background: white !important; }
             `;
             frameDoc.head.appendChild(style);
@@ -106,9 +148,35 @@ const Bill = () => {
     });
   }, []);
 
-  // Fallback print method that doesn't rely on Promises
-  const fallbackPrint = () => {
-    if (!componentRef.current) return;
+  // Handle print with database storage
+  const handlePrintAndSave = useCallback(async () => {
+    try {
+      setIsSaving(true);
+      
+      // First save the bill to the database
+      // Always save as detailed format for the main bill
+      await saveBill('detailed');
+      
+      // Then print detailed receipt
+      await safePrintDetailed().catch((err) => {
+        console.error('Safe print failed:', err);
+        // If safe print fails, use fallback
+        fallbackPrintDetailed();
+      });
+      
+      // Don't automatically clear the bill after printing
+      // Let the user decide when to clear it
+    } catch (error) {
+      console.error('Print and save error:', error);
+      alert('There was an error saving the bill. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [saveBill, safePrintDetailed]);
+
+  // Fallback print method for detailed receipt
+  const fallbackPrintDetailed = () => {
+    if (!detailedRef.current) return;
     
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -117,9 +185,52 @@ const Bill = () => {
     }
     
     printWindow.document.write('<html><head><title>Print Receipt</title>');
-    printWindow.document.write('<style>@page { size: 80mm auto !important; margin: 0mm !important; } body { font-family: "Courier New", monospace; width: 80mm; }</style>');
+    printWindow.document.write(`
+      <style>
+        @page { size: 80mm auto !important; margin: 0mm !important; }
+        body { font-family: "Courier New", monospace; width: 80mm; }
+        .receipt-container { padding: 10px; }
+        .text-center { text-align: center; }
+        .text-left { text-align: left; }
+        .text-right { text-align: right; }
+        .text-sm { font-size: 12px; }
+        .text-xs { font-size: 10px; }
+        .text-base { font-size: 14px; }
+        .text-lg { font-size: 16px; }
+        .text-xl { font-size: 18px; }
+        .font-bold { font-weight: bold; }
+        .font-medium { font-weight: 500; }
+        .mb-1 { margin-bottom: 4px; }
+        .mb-2 { margin-bottom: 8px; }
+        .mb-3 { margin-bottom: 12px; }
+        .mb-4 { margin-bottom: 16px; }
+        .my-2 { margin-top: 8px; margin-bottom: 8px; }
+        .mt-2 { margin-top: 8px; }
+        .mt-4 { margin-top: 16px; }
+        .py-0.5 { padding-top: 2px; padding-bottom: 2px; }
+        .py-1 { padding-top: 4px; padding-bottom: 4px; }
+        .border-b { border-bottom: 1px solid #ddd; }
+        .border-gray-100 { border-color: #f7fafc; }
+        .border-gray-200 { border-color: #edf2f7; }
+        .border-gray-300 { border-color: #e2e8f0; }
+        .w-full { width: 100%; }
+        .w-1/2 { width: 50%; }
+        .w-12 { width: 3rem; }
+        .w-16 { width: 4rem; }
+        .grid { display: grid; }
+        .grid-cols-2 { grid-template-columns: 1fr 1fr; }
+        .flex { display: flex; }
+        .justify-between { justify-content: space-between; }
+        .break-words { word-wrap: break-word; }
+        .whitespace-normal { white-space: normal; }
+        .gap-0.5 { gap: 2px; }
+        .leading-tight { line-height: 1.25; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { vertical-align: top; }
+      </style>
+    `);
     printWindow.document.write('</head><body>');
-    printWindow.document.write(componentRef.current.innerHTML);
+    printWindow.document.write(detailedRef.current.innerHTML);
     printWindow.document.write('</body></html>');
     
     printWindow.document.close();
@@ -136,38 +247,13 @@ const Bill = () => {
     }, 500);
   };
 
-  // Handle print with database storage
-  const handlePrintAndSave = useCallback(async () => {
-    try {
-      setIsSaving(true);
-      
-      // First save the bill to the database
-      await saveBill(receiptFormat);
-      
-      // Then print it
-      await safePrint().catch((err) => {
-        console.error('Safe print failed:', err);
-        // If safe print fails, use fallback
-        fallbackPrint();
-      });
-      
-      // Don't automatically clear the bill after printing
-      // Let the user decide when to clear it
-    } catch (error) {
-      console.error('Print and save error:', error);
-      alert('There was an error saving the bill. Please try again.');
-    } finally {
-      setIsSaving(false);
-    }
-  }, [saveBill, receiptFormat, safePrint, fallbackPrint]);
-
   // Handle saving the bill only
   const handleSaveOnly = useCallback(async () => {
     try {
       setIsSaving(true);
       
-      // Save the bill to the database
-      const result = await saveBill(receiptFormat);
+      // Save the bill to the database (always as detailed receipt)
+      const result = await saveBill('detailed');
       
       // Notify the user of successful save
       alert('Bill saved successfully!');
@@ -178,7 +264,7 @@ const Bill = () => {
     } finally {
       setIsSaving(false);
     }
-  }, [saveBill, receiptFormat]);
+  }, [saveBill]);
 
   // Clear the bill and reset saved state
   const handleClearBill = () => {
@@ -189,6 +275,125 @@ const Bill = () => {
   const toggleReceiptFormat = () => {
     setReceiptFormat(current => current === 'detailed' ? 'simple' : 'detailed');
   };
+
+  // Safe printing function for KOT
+  const safePrintKOT = useCallback(() => {
+    return new Promise((resolve) => {
+      // Create a print iframe to avoid issues with the main page
+      const printFrame = document.createElement('iframe');
+      printFrame.style.position = 'absolute';
+      printFrame.style.top = '-9999px';
+      printFrame.style.left = '-9999px';
+      printFrame.onload = () => {
+        try {
+          // Copy styles to the iframe
+          const frameDoc = printFrame.contentDocument;
+          if (!frameDoc) throw new Error('Cannot access iframe document');
+          
+          // Copy the KOT HTML
+          if (kotRef.current) {
+            frameDoc.body.innerHTML = kotRef.current.innerHTML;
+            
+            // Add print styles
+            const style = frameDoc.createElement('style');
+            style.textContent = `
+              @page { size: 80mm auto !important; margin: 0mm !important; }
+              body { width: 80mm !important; font-family: 'Courier New', monospace !important; }
+              .no-print { display: none !important; }
+              .receipt-container { padding: 10px !important; }
+              .text-center { text-align: center !important; }
+              .text-left { text-align: left !important; }
+              .text-right { text-align: right !important; }
+              .text-sm { font-size: 12px !important; }
+              .text-xs { font-size: 10px !important; }
+              .text-base { font-size: 14px !important; }
+              .text-lg { font-size: 16px !important; }
+              .text-xl { font-size: 18px !important; }
+              .font-bold { font-weight: bold !important; }
+              .font-medium { font-weight: 500 !important; }
+              .mb-1 { margin-bottom: 4px !important; }
+              .mb-2 { margin-bottom: 8px !important; }
+              .mb-3 { margin-bottom: 12px !important; }
+              .mb-4 { margin-bottom: 16px !important; }
+              .my-2 { margin-top: 8px !important; margin-bottom: 8px !important; }
+              .mt-2 { margin-top: 8px !important; }
+              .mt-4 { margin-top: 16px !important; }
+              .py-0.5 { padding-top: 2px !important; padding-bottom: 2px !important; }
+              .py-1 { padding-top: 4px !important; padding-bottom: 4px !important; }
+              .border-b { border-bottom: 1px solid #ddd !important; }
+              .border-gray-100 { border-color: #f7fafc !important; }
+              .border-gray-200 { border-color: #edf2f7 !important; }
+              .border-gray-300 { border-color: #e2e8f0 !important; }
+              .w-full { width: 100% !important; }
+              .w-1/2 { width: 50% !important; }
+              .w-12 { width: 3rem !important; }
+              .w-16 { width: 4rem !important; }
+              .grid { display: grid !important; }
+              .grid-cols-2 { grid-template-columns: 1fr 1fr !important; }
+              .flex { display: flex !important; }
+              .justify-between { justify-content: space-between !important; }
+              .break-words { word-wrap: break-word !important; }
+              .whitespace-normal { white-space: normal !important; }
+              .gap-0.5 { gap: 2px !important; }
+              .leading-tight { line-height: 1.25 !important; }
+              table { width: 100% !important; border-collapse: collapse !important; }
+              table, tr, td, th { page-break-inside: avoid !important; }
+              th, td { vertical-align: top !important; }
+              * { color: black !important; background: white !important; }
+            `;
+            frameDoc.head.appendChild(style);
+            
+            // Print and cleanup
+            setTimeout(() => {
+              try {
+                printFrame.contentWindow.print();
+                setTimeout(() => {
+                  document.body.removeChild(printFrame);
+                  resolve(true);
+                }, 500);
+              } catch (e) {
+                console.error('Print error:', e);
+                document.body.removeChild(printFrame);
+                resolve(false);
+              }
+            }, 500);
+          } else {
+            document.body.removeChild(printFrame);
+            resolve(false);
+          }
+        } catch (e) {
+          console.error('Print preparation error:', e);
+          document.body.removeChild(printFrame);
+          resolve(false);
+        }
+      };
+      
+      document.body.appendChild(printFrame);
+    });
+  }, []);
+
+  // Handle KOT printing
+  const handlePrintKOT = useCallback(async () => {
+    if (bill.length === 0) {
+      alert('No items to print in KOT');
+      return;
+    }
+
+    try {
+      setIsPrintingKOT(true);
+      
+      await safePrintKOT().catch((err) => {
+        console.error('Safe KOT print failed:', err);
+        // If safe print fails, use fallback (add fallback here if needed)
+      });
+      
+    } catch (error) {
+      console.error('Print KOT error:', error);
+      alert('There was an error printing KOT. Please try again.');
+    } finally {
+      setIsPrintingKOT(false);
+    }
+  }, [safePrintKOT, bill]);
 
   // Calculate total
   const total = bill.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -204,6 +409,13 @@ const Bill = () => {
           disabled={bill.length === 0 || isSaving}
         >
           {isSaving ? 'Processing...' : 'Print Receipt'}
+        </button>
+        <button
+          onClick={handlePrintKOT}
+          className="bg-orange-500 text-white px-4 py-2 rounded"
+          disabled={bill.length === 0 || isPrintingKOT}
+        >
+          {isPrintingKOT ? 'Printing...' : 'Print KOT'}
         </button>
         <button
           onClick={handleSaveOnly}
@@ -224,7 +436,7 @@ const Bill = () => {
           className="bg-purple-500 text-white px-4 py-2 rounded"
           disabled={bill.length === 0 || isSaving}
         >
-          {receiptFormat === 'detailed' ? 'Simple Format' : 'Detailed Format'}
+          {receiptFormat === 'detailed' ? 'KOT Format' : 'Detailed Format'}
         </button>
       </div>
 
@@ -237,29 +449,59 @@ const Bill = () => {
         </div>
       )}
 
-      <div className="receipt-preview bg-gray-50 p-4 rounded-lg mb-4">
-        {loading ? (
-          <p>Loading...</p>
-        ) : bill.length > 0 ? (
-          <div ref={componentRef} className="receipt-container">
-            {receiptFormat === 'detailed' ? (
-              <PrintableReceipt 
-                cafeDetails={cafeDetails}
-                bill={bill}
-                total={total}
-                billNumber={billNumber}
-              />
-            ) : (
-              <SimpleReceipt
-                cafeDetails={cafeDetails}
-                bill={bill}
-                billNumber={billNumber}
-              />
-            )}
-          </div>
-        ) : (
-          <p className="text-gray-500">No items added to bill yet.</p>
-        )}
+      <div className="bg-gray-50 rounded-lg border border-gray-200 shadow-inner">
+        <div className="receipt-preview p-2 max-w-[300px] mx-auto">
+          {loading ? (
+            <div className="flex justify-center items-center h-40">
+              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+            </div>
+          ) : bill.length > 0 ? (
+            <div ref={displayRef} className="receipt-container bg-white p-3 shadow-sm border border-gray-100 rounded">
+              {receiptFormat === 'detailed' ? (
+                <PrintableReceipt 
+                  cafeDetails={cafeDetails}
+                  bill={bill}
+                  total={total}
+                  billNumber={billNumber}
+                  tableNo={tableNo}
+                />
+              ) : (
+                <KOTReceipt
+                  bill={bill}
+                  billNumber={billNumber}
+                  tableNo={tableNo}
+                />
+              )}
+            </div>
+          ) : (
+            <div className="flex justify-center items-center h-40">
+              <p className="text-gray-500">No items added to bill yet.</p>
+            </div>
+          )}
+        </div>
+      </div>
+      
+      {/* Hidden Receipts for Printing */}
+      <div className="hidden">
+        {/* Hidden Detailed Receipt */}
+        <div ref={detailedRef}>
+          <PrintableReceipt
+            cafeDetails={cafeDetails}
+            bill={bill}
+            total={total}
+            billNumber={billNumber}
+            tableNo={tableNo}
+          />
+        </div>
+        
+        {/* Hidden KOT Receipt */}
+        <div ref={kotRef}>
+          <KOTReceipt
+            bill={bill}
+            billNumber={billNumber}
+            tableNo={tableNo}
+          />
+        </div>
       </div>
     </div>
   );

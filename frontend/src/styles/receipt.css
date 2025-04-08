@@ -15,10 +15,10 @@
   }
   
   .receipt-container {
-    width: 76mm !important;  /* 80mm minus some margin */
+    width: 72mm !important;  /* 80mm minus some margin */
     font-family: 'Courier New', monospace !important;
     font-size: 9pt !important;
-    line-height: 1.2 !important;
+    line-height: 1.1 !important;
     color: #000 !important;
     background-color: white !important;
     margin: 0 auto !important;
@@ -27,7 +27,7 @@
   
   .receipt-header {
     text-align: center !important;
-    margin-bottom: 3mm !important;
+    margin-bottom: 2mm !important;
   }
   
   .receipt-header h1 {
@@ -37,14 +37,14 @@
   }
   
   .receipt-header p {
-    margin: 0.5mm 0 !important;
+    margin: 0.3mm 0 !important;
     font-size: 8pt !important;
   }
   
   .receipt-info {
     display: flex !important;
     flex-direction: column !important;
-    margin-bottom: 2mm !important;
+    margin-bottom: 1mm !important;
     font-size: 8pt !important;
   }
   
@@ -63,10 +63,10 @@
   .receipt-table th, 
   .receipt-table td {
     text-align: left !important;
-    padding: 0.5mm 0 !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
+    padding: 0.3mm 0 !important;
+    overflow: visible !important;
+    word-wrap: break-word !important;
+    white-space: normal !important;
   }
   
   .receipt-table .qty {
@@ -91,7 +91,7 @@
   }
   
   .receipt-footer {
-    margin-top: 3mm !important;
+    margin-top: 2mm !important;
     text-align: center !important;
     font-size: 8pt !important;
   }
@@ -101,28 +101,43 @@
     display: none !important;
   }
   
-  /* Make sure text doesn't break in weird places */
-  .receipt-nowrap {
-    white-space: nowrap !important;
+  /* Multi-line text support */
+  .break-words {
+    word-wrap: break-word !important;
+    word-break: break-word !important;
+  }
+  
+  .whitespace-normal {
+    white-space: normal !important;
+  }
+  
+  hr {
+    margin: 1mm 0 !important;
+    border-top: 1px dashed #000 !important;
+  }
+  
+  table {
+    margin-bottom: 1mm !important;
+  }
+  
+  th, td {
+    padding: 0.5mm 0 !important;
+    vertical-align: top !important;
   }
 }
 
 /* Preview styles (when not printing) */
 .receipt-preview {
-  width: 80mm;
   max-width: 100%;
   background-color: white;
   margin: 0 auto;
-  border: 1px solid #ddd;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   font-family: 'Courier New', monospace;
 }
 
 .receipt-container {
   width: 100%;
   font-family: 'Courier New', monospace;
-  font-size: 9pt;
-  line-height: 1.2;
+  line-height: 1.1;
   padding: 2mm;
 }
 
@@ -132,21 +147,18 @@
 }
 
 .receipt-header h1 {
-  font-size: 11pt;
   font-weight: bold;
   margin: 0 0 1mm 0;
 }
 
 .receipt-header p {
-  margin: 0.5mm 0;
-  font-size: 8pt;
+  margin: 0.3mm 0;
 }
 
 .receipt-info {
   display: flex;
   flex-direction: column;
   margin-bottom: 2mm;
-  font-size: 8pt;
 }
 
 .receipt-divider {
@@ -157,7 +169,6 @@
 .receipt-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 8pt;
   table-layout: fixed;
 }
 
@@ -165,9 +176,10 @@
 .receipt-table td {
   text-align: left;
   padding: 0.5mm 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  word-wrap: break-word;
+  white-space: normal;
+  vertical-align: top;
 }
 
 .receipt-table .qty {
@@ -194,5 +206,4 @@
 .receipt-footer {
   margin-top: 3mm;
   text-align: center;
-  font-size: 8pt;
 } 
