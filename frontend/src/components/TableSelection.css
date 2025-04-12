@@ -1,0 +1,87 @@
+.table-selection {
+  padding: 1rem;
+}
+
+.tables-container {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.table-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  border: 2px solid #e5e7eb;
+  background-color: white;
+  color: #374151;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  height: 100px; /* Fixed height to prevent layout shifts */
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.table-card:hover {
+  background-color: #f3f4f6;
+  transform: translateY(-2px);
+}
+
+.table-card.selected {
+  background-color: #2563eb;
+  color: white;
+  border-color: #2563eb;
+}
+
+.table-card.occupied {
+  background-color: #fef3c7;
+  color: #78350f;
+  border-color: #f59e0b;
+}
+
+.table-card.occupied:hover {
+  background-color: #fde68a;
+}
+
+.table-card h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem 0;
+}
+
+.table-card p {
+  font-size: 0.75rem;
+  margin: 0;
+}
+
+.status-indicator {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: #f59e0b;
+  border: 1px solid white;
+}
+
+.loading, .error {
+  text-align: center;
+  padding: 2rem;
+  color: #4b5563;
+}
+
+.error {
+  color: #b91c1c;
+}
+
+/* Ensure the table selection component has a stable height */
+.table-selection {
+  min-height: 200px;
+} 

@@ -1,6 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
 import { useBill } from '../context/BillContext';
-import { getAllTables, createTable, deleteTable as deleteTableApi, bulkCreateTables } from '../api/api';
+import { 
+  getAllTables, 
+  getTablesWithStatus,
+  createTable, 
+  deleteTable as deleteTableApi, 
+  bulkCreateTables 
+} from '../api/api';
+import './TableSelection.css';
 
 // Function to format table number, skipping 13 and handling special cases like 12A, 12B, etc.
 const formatTableNumber = (num) => {
@@ -134,8 +141,30 @@ const getNextTableNumber = (tables) => {
     }
 };
 
+// Create a memoized Table component to prevent unnecessary re-renders
+const Table = memo(({ table, selectedTable, onTableClick, hasLocalBill }) => {
+  // Determine the class based on status and selection outside render to reduce calculations
+  // If there's a local bill, override the server status to always show as occupied
+  const tableClass = 
+    table.tableNumber === selectedTable ? 'table-card selected' : 
+    hasLocalBill || table.status === 'occupied' ? 'table-card occupied' : 
+    'table-card';
+
+  return (
+    <div 
+      className={tableClass}
+      onClick={() => onTableClick(table)}
+    >
+      <h3>Table {table.tableNumber}</h3>
+      {/* <p>Status: {hasLocalBill || table.status === 'occupied' ? 'occupied' : 'available'}</p> */}
+      {(hasLocalBill || table.status === 'occupied') && <div className="status-indicator"></div>}
+    </div>
+  );
+});
+
+// Main TableSelection component
 const TableSelection = () => {
-    const { selectedTable, setTableData, bill, currentTableData } = useBill();
+    const { selectedTable, setTableData, bill, currentTableData, tableBills, savedBillId, isTableSwitching } = useBill();
     const [tables, setTables] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isManagingTables, setIsManagingTables] = useState(false);
@@ -146,73 +175,151 @@ const TableSelection = () => {
     const [error, setError] = useState(null);
     const bulkModalRef = useRef(null);
     const customModalRef = useRef(null);
+    const refreshTimerRef = useRef(null);
+    const lastTableUpdateRef = useRef(Date.now());
+    const tableDataCacheRef = useRef({});
+    const initialLoadCompleteRef = useRef(false);
     
-    // Fetch tables from the backend
-    const fetchTables = async () => {
-        setIsLoading(true);
-        setError(null);
+    // Memoize this function to prevent recreating it on each render
+    const fetchTables = useCallback(async (silent = false) => {
+        // Skip frequent updates once initially loaded
+        if (silent && initialLoadCompleteRef.current) {
+            const now = Date.now();
+            // Only refresh every 30 seconds at most when in silent mode
+            if (now - lastTableUpdateRef.current < 30000) {
+                return;
+            }
+        }
+
+        if (!silent) {
+            setIsLoading(true);
+        }
+        
         try {
-            const tablesData = await getAllTables();
-            setTables(tablesData);
+            // Only use the full status endpoint on initial load, then use simpler endpoint
+            const data = initialLoadCompleteRef.current && silent
+                ? await getAllTables() // Faster API call for background refreshes
+                : await getTablesWithStatus(); // Detailed call for initial load
             
-            // If we have a selected table that's no longer in the list, clear it
-            if (selectedTable && currentTableData) {
-                const tableExists = tablesData.some(t => t._id === currentTableData._id);
+            // Apply local bill status overrides - this is crucial for performance
+            const tablesWithLocalStatus = data.map(table => {
+                // If we have a local bill for this table, it's always occupied regardless of backend status
+                const hasLocalBill = tableBills[table._id] && 
+                                    tableBills[table._id].billItems && 
+                                    tableBills[table._id].billItems.length > 0;
                 
-                if (!tableExists) {
-                    setTableData(null);
+                if (hasLocalBill) {
+                    return {
+                        ...table,
+                        // Only override if the API disagrees with our local state
+                        status: 'occupied'
+                    };
+                }
+                
+                return table;
+            });
+            
+            // Update the cache with the latest table data
+            tablesWithLocalStatus.forEach(table => {
+                tableDataCacheRef.current[table._id] = table;
+            });
+            
+            setTables(tablesWithLocalStatus);
+            
+            // Only do currentTableData updates on initial load and explicit refreshes
+            if (!silent || !initialLoadCompleteRef.current) {
+                // If we have a selected table, make sure it's updated with latest data
+                if (selectedTable && currentTableData) {
+                    const updatedSelectedTable = tablesWithLocalStatus.find(t => 
+                        t.tableNumber === selectedTable && t._id === currentTableData._id
+                    );
+                    
+                    if (updatedSelectedTable) {
+                        // Only update if there's a critical change that's not already reflected
+                        const currentHasBill = bill.length > 0 || savedBillId;
+                        const serverSaysOccupied = updatedSelectedTable.status === 'occupied';
+                        
+                        // Only update when server state and local state disagree
+                        if ((currentHasBill && !serverSaysOccupied) || (!currentHasBill && serverSaysOccupied)) {
+                            setTableData(updatedSelectedTable);
+                        }
+                    }
                 }
             }
-        } catch (err) {
-            console.error("Error fetching tables:", err);
-            setError("Failed to load tables. Try again later.");
             
-            // Fallback to localStorage if API fails
-            const savedTables = localStorage.getItem('cafe-tables');
-            if (savedTables) {
+            setError(null);
+            lastTableUpdateRef.current = Date.now();
+            initialLoadCompleteRef.current = true;
+        } catch (err) {
+            console.error('Error fetching tables:', err);
+            
+            if (!silent) {
+                setError('Failed to fetch tables. Using backup data if available.');
+                
                 try {
-                    const parsedTables = JSON.parse(savedTables);
-                    setTables(parsedTables.map(t => ({ tableNumber: t, status: 'available' })));
-                } catch (parseErr) {
-                    console.error("Error parsing saved tables:", parseErr);
+                    // Simple fallback
+                    const fallbackData = await getAllTables();
+                    setTables(fallbackData);
+                    initialLoadCompleteRef.current = true;
+                } catch (fallbackErr) {
+                    console.error('Fallback also failed:', fallbackErr);
+                    if (Object.keys(tableDataCacheRef.current).length > 0) {
+                        setTables(Object.values(tableDataCacheRef.current));
+                    }
                 }
-            } else {
-                // Default: 12 tables, skipping 13
-                const defaultTables = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15];
-                setTables(defaultTables.map(t => ({ tableNumber: t, status: 'available' })));
             }
         } finally {
-            setIsLoading(false);
+            if (!silent) {
+                setIsLoading(false);
+            }
         }
-    };
-    
-    // Initial fetch of tables
+    }, [selectedTable, currentTableData, setTableData, tableBills, bill, savedBillId]);
+
+    // Set up automatic refresh at regular intervals - but less frequent
     useEffect(() => {
+        // Initial load
         fetchTables();
-    }, []);
-    
-    // Close modals when clicking outside
-    useEffect(() => {
-        function handleClickOutside(event) {
-            if (bulkModalRef.current && !bulkModalRef.current.contains(event.target)) {
-                setShowBulkAddModal(false);
-            }
-            if (customModalRef.current && !customModalRef.current.contains(event.target)) {
-                setShowCustomTableModal(false);
-            }
-        }
         
-        if (showBulkAddModal || showCustomTableModal) {
-            document.addEventListener("mousedown", handleClickOutside);
-        } else {
-            document.removeEventListener("mousedown", handleClickOutside);
-        }
+        // Set up interval for background refresh every 30 seconds
+        refreshTimerRef.current = setInterval(() => {
+            fetchTables(true); // Silent refresh
+        }, 30000); // Increased to 30 seconds for better performance
         
         return () => {
-            document.removeEventListener("mousedown", handleClickOutside);
+            if (refreshTimerRef.current) {
+                clearInterval(refreshTimerRef.current);
+            }
         };
-    }, [showBulkAddModal, showCustomTableModal]);
-    
+    }, [fetchTables]);
+
+    // Handle table selection
+    const handleTableClick = useCallback((table) => {
+        // Prevent selecting the same table again or during table switching
+        if (
+            (selectedTable === table.tableNumber && table._id === currentTableData?._id) ||
+            isTableSwitching
+        ) {
+            return;
+        }
+        
+        // Apply local bill status before updating context
+        const hasLocalBill = tableBills[table._id] && 
+                           tableBills[table._id].billItems && 
+                           tableBills[table._id].billItems.length > 0;
+                           
+        const tableWithCorrectStatus = {
+            ...table,
+            // Use local state to determine status instead of waiting for API
+            status: hasLocalBill ? 'occupied' : table.status
+        };
+        
+        // Update the table data in the BillContext
+        setTableData(tableWithCorrectStatus);
+        
+        // Update cache
+        tableDataCacheRef.current[table._id] = tableWithCorrectStatus;
+    }, [selectedTable, currentTableData, setTableData, isTableSwitching, tableBills]);
+
     // Add a single new table
     const addTable = async () => {
         try {
@@ -350,6 +457,18 @@ const TableSelection = () => {
         const tableToDelete = tables.find(t => t.tableNumber === tableNum);
         if (!tableToDelete) return;
         
+        // Check if table has an active bill
+        const hasActiveBill = (tableToDelete.hasBill && tableToDelete.bill) || 
+                             (tableBills[tableToDelete._id] && 
+                              tableBills[tableToDelete._id].billItems && 
+                              tableBills[tableToDelete._id].billItems.length > 0);
+        
+        // Don't allow deleting if it has an active bill
+        if (hasActiveBill) {
+            alert("Cannot delete a table with an active bill. Please clear the bill first.");
+            return;
+        }
+        
         // Don't allow deleting selected table or if bill has items
         if (currentTableData && currentTableData._id === tableToDelete._id && bill.length > 0) {
             alert("Can't delete this table while it has items in the bill.");
@@ -392,6 +511,58 @@ const TableSelection = () => {
             ? `${previewResults[0]} to ${previewResults[previewResults.length - 1]}`
             : '';
     };
+
+    // Render the table components efficiently 
+    const renderTables = useMemo(() => {
+        return tables.map((table) => {
+            // Check if this table has a local bill record which overrides server status
+            const hasLocalBill = tableBills[table._id] && 
+                               tableBills[table._id].billItems && 
+                               tableBills[table._id].billItems.length > 0;
+            
+            return (
+                <div key={table._id || table.tableNumber} className="relative">
+                    <Table
+                        table={table}
+                        selectedTable={selectedTable}
+                        onTableClick={handleTableClick}
+                        hasLocalBill={hasLocalBill}
+                    />
+                    
+                    {/* Delete button - only visible in manage mode */}
+                    {isManagingTables && (
+                        <button 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                deleteTable(table.tableNumber);
+                            }}
+                            className={`absolute -top-1 -right-1 rounded-full w-5 h-5 flex items-center justify-center shadow-sm transition-colors ${
+                                hasLocalBill || table.status === 'occupied'
+                                    ? 'bg-gray-400 cursor-not-allowed' 
+                                    : 'bg-red-500 hover:bg-red-600 text-white'
+                            }`}
+                            title={(hasLocalBill || table.status === 'occupied') ? "Cannot delete table with active bill" : "Delete Table"}
+                            disabled={hasLocalBill || table.status === 'occupied'}
+                        >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    )}
+                </div>
+            );
+        });
+    }, [tables, selectedTable, handleTableClick, isManagingTables, tableBills, deleteTable]);
+
+    // Show loading indicator
+    if (isLoading && tables.length === 0) {
+        return <div className="loading">Loading tables...</div>;
+    }
+
+    // Show error message
+    if (error && tables.length === 0) {
+        return <div className="error">{error}</div>;
+    }
 
     return (
         <div className="bg-white p-4 rounded-lg shadow-md">
@@ -456,7 +627,7 @@ const TableSelection = () => {
                 </div>
             )}
             
-            {isLoading ? (
+            {isLoading && tables.length === 0 ? (
                 <div className="py-8 flex justify-center items-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
                 </div>
@@ -472,50 +643,7 @@ const TableSelection = () => {
                     {/* Grid layout of tables - medium sized with 8 tables per row with scrolling for many tables */}
                     <div className={`max-h-60 overflow-y-auto pr-1 mb-2 ${tables.length > 24 ? 'custom-scrollbar' : ''}`}>
                         <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-                            {tables.map((table) => (
-                                <div key={table._id || table.tableNumber} className="relative">
-                                    <button 
-                                        onClick={() => isManagingTables ? null : setTableData(table)}
-                                        className={`flex flex-col items-center justify-center py-1 px-1 rounded border transition-all h-16 w-full ${
-                                            currentTableData && currentTableData._id === table._id
-                                                ? 'bg-blue-600 text-white border-blue-600' 
-                                                : table.status === 'occupied'
-                                                    ? 'bg-yellow-50 text-gray-700 border-yellow-300 hover:bg-yellow-100'
-                                                    : table.status === 'reserved'
-                                                        ? 'bg-purple-50 text-gray-700 border-purple-300 hover:bg-purple-100'
-                                                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
-                                        } ${isManagingTables ? 'cursor-default' : 'cursor-pointer'}`}
-                                    >
-                                        {/* Medium sized table icon */}
-                                        <svg 
-                                            className="w-6 h-6 mb-0.5" 
-                                            viewBox="0 0 24 24" 
-                                            fill="none" 
-                                            stroke="currentColor" 
-                                            xmlns="http://www.w3.org/2000/svg"
-                                        >
-                                            <rect x="3" y="8" width="18" height="12" rx="2" strokeWidth="2" />
-                                            <rect x="7" y="4" width="10" height="4" rx="1" strokeWidth="2" />
-                                        </svg>
-                                        <span className={`text-xs font-medium leading-none mt-1 ${typeof table.tableNumber === 'string' && table.tableNumber.length > 6 ? 'text-[10px]' : ''}`}>
-                                            Table {table.tableNumber}
-                                        </span>
-                                    </button>
-                                    
-                                    {/* Delete button - only visible in manage mode */}
-                                    {isManagingTables && (
-                                        <button 
-                                            onClick={() => deleteTable(table.tableNumber)}
-                                            className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center shadow-sm hover:bg-red-600 transition-colors"
-                                            title="Delete Table"
-                                        >
-                                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                            </svg>
-                                        </button>
-                                    )}
-                                </div>
-                            ))}
+                            {renderTables}
                         </div>
                     </div>
                     
@@ -637,4 +765,4 @@ const TableSelection = () => {
     );
 };
 
-export default TableSelection;
+export default memo(TableSelection);

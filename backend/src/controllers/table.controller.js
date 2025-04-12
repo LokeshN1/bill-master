@@ -120,18 +120,53 @@ export const getTablesWithStatus = async (req, res) => {
     // Get all bills to check which tables have active bills
     const activeBills = await Bill.find();
     
-    const tablesWithStatus = tables.map(table => {
-      const tableBill = activeBills.find(
-        bill => bill.tableNo === table.tableNumber || 
-               bill.tableNo.toString() === table.tableNumber.toString()
-      );
+    const tablesWithStatus = await Promise.all(tables.map(async (table) => {
+      let billDetails = null;
+      
+      // Check if this table has a lastBillId and get the bill details
+      if (table.lastBillId) {
+        try {
+          const bill = await Bill.findById(table.lastBillId);
+          if (bill) {
+            billDetails = {
+              _id: bill._id,
+              billNumber: bill.billNumber,
+              totalAmount: bill.totalAmount,
+              itemCount: bill.items.length,
+              totalQuantity: bill.items.reduce((sum, item) => sum + item.quantity, 0),
+              createdAt: bill.createdAt
+            };
+          }
+        } catch (err) {
+          console.error(`Error fetching bill for table ${table.tableNumber}:`, err);
+        }
+      }
+      
+      // Look for any other bills associated with this table
+      if (!billDetails) {
+        const tableBill = activeBills.find(
+          bill => bill.tableNo === table.tableNumber || 
+                 bill.tableNo.toString() === table.tableNumber.toString()
+        );
+        
+        if (tableBill) {
+          billDetails = {
+            _id: tableBill._id,
+            billNumber: tableBill.billNumber,
+            totalAmount: tableBill.totalAmount,
+            itemCount: tableBill.items.length,
+            totalQuantity: tableBill.items.reduce((sum, item) => sum + item.quantity, 0),
+            createdAt: tableBill.createdAt
+          };
+        }
+      }
       
       return {
         ...table.toObject(),
-        hasBill: !!tableBill,
-        billId: tableBill ? tableBill._id : null
+        hasBill: !!billDetails,
+        bill: billDetails
       };
-    });
+    }));
     
     res.json(tablesWithStatus);
   } catch (error) {
