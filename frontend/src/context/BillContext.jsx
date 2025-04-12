@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { getAllItems, createBill, updateBill } from '../api/api';
+import { getAllItems, createBill, updateBill, updateTable } from '../api/api';
 
 // Create the context
 export const BillContext = createContext();
@@ -13,6 +13,7 @@ export const BillProvider = ({ children }) => {
   const [selectedTable, setSelectedTable] = useState(null);
   const [savedBillId, setSavedBillId] = useState(null);
   const [savedBillNumber, setSavedBillNumber] = useState(null);
+  const [currentTableData, setCurrentTableData] = useState(null);
   
   // Fetch items when component mounts
   useEffect(() => {
@@ -34,6 +35,16 @@ export const BillProvider = ({ children }) => {
     
     fetchItems();
   }, []);
+
+  // Reset bill and table data when table selection changes
+  useEffect(() => {
+    if (!selectedTable) {
+      setBill([]);
+      setSavedBillId(null);
+      setSavedBillNumber(null);
+      setCurrentTableData(null);
+    }
+  }, [selectedTable]);
 
   // Add item to the bill
   const addToBill = (item) => {
@@ -91,7 +102,7 @@ export const BillProvider = ({ children }) => {
       // Create a proper bill data structure to match our backend
       const billData = {
         billNumber: savedBillNumber || `BILL-${Math.floor(Math.random() * 10000)}`,
-        tableNo: parseInt(selectedTable, 10),
+        tableNo: selectedTable,
         items: bill.map(item => ({
           itemId: item._id,
           name: item.name,
@@ -117,6 +128,14 @@ export const BillProvider = ({ children }) => {
         if (response && response._id) {
           setSavedBillId(response._id);
           setSavedBillNumber(response.billNumber);
+          
+          // If we have table data, update the table status and link to bill
+          if (currentTableData && currentTableData._id) {
+            await updateTable(currentTableData._id, {
+              status: 'occupied',
+              lastBillId: response._id
+            });
+          }
         }
       }
       
@@ -128,10 +147,32 @@ export const BillProvider = ({ children }) => {
   };
 
   // Clear the bill
-  const clearBill = () => {
+  const clearBill = async () => {
     setBill([]);
     setSavedBillId(null);
     setSavedBillNumber(null);
+    
+    // If we have table data, update its status back to available
+    if (currentTableData && currentTableData._id) {
+      try {
+        await updateTable(currentTableData._id, {
+          status: 'available',
+          lastBillId: null
+        });
+      } catch (error) {
+        console.error('Error updating table status:', error);
+      }
+    }
+  };
+
+  // Set the current table data (includes table object with ID for API calls)
+  const setTableData = (tableData) => {
+    setCurrentTableData(tableData);
+    if (tableData) {
+      setSelectedTable(tableData.tableNumber);
+    } else {
+      setSelectedTable(null);
+    }
   };
 
   return (
@@ -140,7 +181,9 @@ export const BillProvider = ({ children }) => {
         items, 
         bill, 
         selectedTable, 
-        setSelectedTable, 
+        setSelectedTable,
+        currentTableData,
+        setTableData, 
         addToBill, 
         removeFromBill, 
         clearBill,
