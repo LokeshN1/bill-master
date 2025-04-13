@@ -137,10 +137,60 @@
         break-inside: avoid !important;
       }
 
-      /* Force black text for better readability on thermal printers */
+      /* Optimize for thermal printers with high contrast */
       .receipt-container * {
         color: black !important;
         background: white !important;
+        font-weight: 600 !important;
+        line-height: 1.4 !important;
+        letter-spacing: 0.01em !important;
+      }
+
+      /* Make headers extra bold */
+      .receipt-container h1,
+      .receipt-container h2,
+      .receipt-container h3,
+      .receipt-container th,
+      .receipt-container .font-bold {
+        font-weight: 900 !important;
+      }
+
+      /* Make borders darker for better visibility */
+      .receipt-container hr,
+      .receipt-container .border-b,
+      .receipt-container th,
+      .receipt-container td {
+        border-color: black !important;
+        border-width: 0.5mm !important;
+      }
+
+      /* Increase spacing between items */
+      .receipt-container tr {
+        margin-bottom: 1mm !important;
+      }
+
+      /* Make total section stand out */
+      .receipt-container .total-section {
+        border: 1px solid black !important;
+        padding: 2mm !important;
+        margin: 2mm 0 !important;
+      }
+
+      /* Increase font size for better readability */
+      .receipt-container .text-xs {
+        font-size: 11px !important;
+      }
+      
+      .receipt-container .text-sm {
+        font-size: 13px !important;
+      }
+      
+      .receipt-container .text-base {
+        font-size: 15px !important;
+      }
+      
+      .receipt-container .text-lg {
+        font-size: 18px !important;
       }
     </style>
   </head>

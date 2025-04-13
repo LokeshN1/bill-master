@@ -228,24 +228,53 @@ const BillManagement = () => {
         .text-center { text-align: center; }
         .text-left { text-align: left; }
         .text-right { text-align: right; }
-        .text-sm { font-size: 12px; }
-        .text-xs { font-size: 10px; }
-        .text-xl { font-size: 18px; }
-        .font-bold { font-weight: bold; }
+        
+        /* Larger fonts for better readability */
+        .text-xs { font-size: 11px; }
+        .text-sm { font-size: 13px; }
+        .text-base { font-size: 15px; }
+        .text-lg { font-size: 18px; }
+        .text-xl { font-size: 20px; }
+        
+        /* Better font weights */
+        * { font-weight: 600; line-height: 1.4; letter-spacing: 0.01em; color: black; background: white; }
+        .font-bold, h1, h2, h3, th { font-weight: 900; }
+        .font-medium { font-weight: 700; }
+        
+        /* Improved spacing */
+        .mb-1 { margin-bottom: 4px; }
+        .mb-2 { margin-bottom: 8px; }
+        .mb-3 { margin-bottom: 12px; }
         .mb-4 { margin-bottom: 16px; }
         .my-2 { margin-top: 8px; margin-bottom: 8px; }
         .mt-2 { margin-top: 8px; }
         .mt-4 { margin-top: 16px; }
         .py-1 { padding-top: 4px; padding-bottom: 4px; }
-        .border-b { border-bottom: 1px solid #ddd; }
-        .border-gray-200 { border-color: #eee; }
-        .border-gray-300 { border-color: #ddd; }
+        
+        /* Darker borders */
+        .border-b, hr { border-bottom: 1px solid #000; border-width: 0.5mm; }
+        .border-gray-100 { border-color: #000; }
+        .border-gray-200 { border-color: #000; }
+        .border-gray-300 { border-color: #000; }
+        
+        /* Layout */
         .w-full { width: 100%; }
         .grid { display: grid; }
         .grid-cols-2 { grid-template-columns: 1fr 1fr; }
         .flex { display: flex; }
         .justify-between { justify-content: space-between; }
+        
+        /* Table styles */
         table { width: 100%; border-collapse: collapse; }
+        tr { margin-bottom: 1mm; }
+        td, th { padding: 2px 0; vertical-align: top; }
+        
+        /* Total section highlight */
+        .total-section, .receipt-total {
+          border: 1px solid black;
+          padding: 8px;
+          margin: 8px 0;
+        }
       </style>
     `);
     printWindow.document.write('</head><body>');
@@ -289,7 +318,7 @@ const BillManagement = () => {
           {/* Bill listing */}
           <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
             <h3 className="text-lg font-semibold mb-4">Bill History</h3>
-            <div className="space-y-3 max-h-[600px] overflow-y-auto">
+            <div className="space-y-3 h-[500px] overflow-y-auto pr-2">
               {bills.map((bill) => (
                 <div 
                   key={bill._id} 
@@ -341,7 +370,7 @@ const BillManagement = () => {
                   {expandedBillId === bill._id && (
                     <div className="mt-3 pt-3 border-t border-gray-100">
                       <h5 className="text-sm font-medium mb-2">Items</h5>
-                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                      <div className="space-y-1 max-h-40 overflow-y-auto custom-scrollbar">
                         {bill.items.map((item, idx) => (
                           <div key={idx} className="flex justify-between text-sm">
                             <span>
@@ -384,7 +413,7 @@ const BillManagement = () => {
                 
                 <div className="mb-6">
                   <h5 className="font-medium mb-2 pb-2 border-b">Items</h5>
-                  <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                  <div className="space-y-2 h-[300px] overflow-y-auto custom-scrollbar pr-2">
                     {selectedBill.items.map((item, idx) => (
                       <div key={idx} className="flex justify-between py-1 border-b border-gray-100">
                         <div>

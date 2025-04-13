@@ -19,38 +19,38 @@ const KOTReceipt = React.forwardRef(({
   const kotNumber = billNumber ? `KOT - ${billNumber.split('-')[1] || billNumber}` : 'KOT';
 
   return (
-    <div className="receipt-container text-[13px] leading-tight">
-      <div className="receipt-header text-center mb-3">
-        <h1 className="text-base font-bold mb-1">KOT</h1>
-        <p className="text-xs mb-0.5">{formattedDate} {formattedTime}</p>
-        <p className="text-xs mb-0.5">{kotNumber}</p>
-        <p className="text-xs mb-0.5">Dine In</p>
-        <p className="text-xs">Table No: {tableNo || 1}</p>
+    <div className="receipt-container text-sm leading-relaxed">
+      <div className="receipt-header text-center mb-4">
+        <h1 className="text-xl font-extrabold mb-2">KOT</h1>
+        <p className="text-sm mb-1 font-semibold">{formattedDate} {formattedTime}</p>
+        <p className="text-sm mb-1 font-semibold">{kotNumber}</p>
+        <p className="text-sm mb-1 font-semibold">Dine In</p>
+        <p className="text-sm font-semibold">Table No: {tableNo || 1}</p>
       </div>
       
-      <hr className="my-2 border-gray-300" />
+      <hr className="my-3 border-gray-300 border-t-2" />
       
       {bill.length > 0 ? (
-        <table className="w-full text-xs mb-2">
+        <table className="w-full text-sm mb-3">
           <thead>
-            <tr className="border-b border-gray-200">
-              <th className="text-left py-0.5 font-semibold w-1/2">Item</th>
-              <th className="text-left py-0.5 font-semibold w-1/4">Special Note:</th>
-              <th className="text-center py-0.5 font-semibold w-12">Qty.</th>
+            <tr className="border-b-2 border-black">
+              <th className="text-left py-1 font-extrabold w-1/2">Item</th>
+              <th className="text-left py-1 font-extrabold w-1/4">Special Note:</th>
+              <th className="text-center py-1 font-extrabold w-12">Qty.</th>
             </tr>
           </thead>
           <tbody>
             {bill.map((item, index) => (
               <tr key={index} className="border-b border-gray-100">
-                <td className="py-0.5 break-words whitespace-normal">{getItemName(item)}</td>
-                <td className="py-0.5 text-xs">--</td>
-                <td className="text-center py-0.5">{item.quantity}</td>
+                <td className="py-1.5 break-words whitespace-normal font-semibold">{getItemName(item)}</td>
+                <td className="py-1.5 text-sm font-semibold">--</td>
+                <td className="text-center py-1.5 font-semibold">{item.quantity}</td>
               </tr>
             ))}
           </tbody>
         </table>
       ) : (
-        <p className="text-center py-2 text-xs">No items added</p>
+        <p className="text-center py-4 text-sm font-semibold">No items added</p>
       )}
     </div>
   );

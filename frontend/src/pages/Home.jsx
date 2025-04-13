@@ -59,20 +59,20 @@ function Home() {
           </Link>
         </div>
         
-        {/* Table Selection at Top */}
-        <div className="mb-6">
+        {/* Table Selection at Top with reduced spacing */}
+        <div className="mb-4">
           <TableSelection />
         </div>
         
-        {/* Main Content - Two Column Layout */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Left Side - Items List */}
-          <div className="bg-white rounded-lg shadow-md overflow-hidden">
+        {/* Main Content - Two Column Layout with better proportions */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left Side - Items List (2/3 width on large screens) */}
+          <div className="lg:col-span-2 bg-white rounded-lg shadow-md">
             <ItemList />
           </div>
           
-          {/* Right Side - Bill */}
-          <div className="bg-white rounded-lg shadow-md overflow-hidden">
+          {/* Right Side - Bill (1/3 width on large screens) */}
+          <div className="bg-white rounded-lg shadow-md">
             <Bill />
           </div>
         </div>

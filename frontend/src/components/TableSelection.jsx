@@ -155,8 +155,7 @@ const Table = memo(({ table, selectedTable, onTableClick, hasLocalBill }) => {
       className={tableClass}
       onClick={() => onTableClick(table)}
     >
-      <h3>Table {table.tableNumber}</h3>
-      {/* <p>Status: {hasLocalBill || table.status === 'occupied' ? 'occupied' : 'available'}</p> */}
+      <h3>T{table.tableNumber}</h3>
       {(hasLocalBill || table.status === 'occupied') && <div className="status-indicator"></div>}
     </div>
   );
@@ -565,53 +564,64 @@ const TableSelection = () => {
     }
 
     return (
-        <div className="bg-white p-4 rounded-lg shadow-md">
-            <div className="flex justify-between items-center mb-3">
-                <h2 className="text-xxl font-semibold text-gray-800">Select Table</h2>
-                <div className="flex gap-3">
+        <div className="bg-white p-3 rounded-lg shadow-md">
+            <div className="flex justify-between items-center mb-2">
+                <h2 className="text-lg font-semibold text-gray-800">Tables</h2>
+                <div className="flex gap-2">
                     <button
                         onClick={toggleManageMode}
-                        className={`py-2 px-4 rounded-md text-base font-medium flex items-center transition-colors ${
+                        className={`py-1 px-2 rounded-md text-sm font-medium flex items-center transition-colors ${
                             isManagingTables 
                                 ? 'bg-gray-200 text-gray-800' 
                                 : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
                         }`}
                         title={isManagingTables ? "Exit Management Mode" : "Manage Tables"}
                     >
-                        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                        {isManagingTables ? 'Done' : 'Manage'}
+                        {isManagingTables ? (
+                            <>
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                Close
+                            </>
+                        ) : (
+                            <>
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                </svg>
+                                Manage
+                            </>
+                        )}
                     </button>
+                    
                     {isManagingTables && (
-                        <div className="flex">
+                        <div className="flex gap-2">
                             <button
                                 onClick={() => setShowCustomTableModal(true)}
-                                className="bg-purple-500 hover:bg-purple-600 text-white py-2 px-4 rounded-md text-base font-medium flex items-center transition-colors mr-2"
+                                className="bg-purple-500 hover:bg-purple-600 text-white py-1 px-2 rounded-md text-sm font-medium flex items-center transition-colors"
                                 title="Add Custom Table"
                             >
-                                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                                 </svg>
                                 Custom
                             </button>
                             <button
                                 onClick={() => setShowBulkAddModal(true)}
-                                className="bg-blue-500 hover:bg-blue-600 text-white py-2 px-4 rounded-md text-base font-medium flex items-center transition-colors mr-2"
+                                className="bg-blue-500 hover:bg-blue-600 text-white py-1 px-2 rounded-md text-sm font-medium flex items-center transition-colors"
                                 title="Add Multiple Tables"
                             >
-                                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14v6m-3-3h6M6 10h2a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v2a2 2 0 002 2zm10 0h2a2 2 0 002-2V6a2 2 0 00-2-2h-2a2 2 0 00-2 2v2a2 2 0 002 2zM6 20h2a2 2 0 002-2v-2a2 2 0 00-2-2H6a2 2 0 00-2 2v2a2 2 0 002 2z" />
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
                                 </svg>
-                                Bulk Add
+                                Bulk
                             </button>
                             <button
                                 onClick={addTable}
-                                className="bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-md text-base font-medium flex items-center transition-colors"
+                                className="bg-green-500 hover:bg-green-600 text-white py-1 px-2 rounded-md text-sm font-medium flex items-center transition-colors"
                                 title="Add Single Table"
                             >
-                                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                                 </svg>
                                 Add
@@ -628,28 +638,28 @@ const TableSelection = () => {
             )}
             
             {isLoading && tables.length === 0 ? (
-                <div className="py-8 flex justify-center items-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                <div className="py-4 flex justify-center items-center">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
                 </div>
             ) : (
                 <>
-                    <div className="mb-2 text-xs text-gray-500 flex items-center">
+                    <div className="mb-1 text-xs text-gray-500 flex items-center">
                         <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <span>Total Tables: {tables.length}</span>
                     </div>
                     
-                    {/* Grid layout of tables - medium sized with 8 tables per row with scrolling for many tables */}
-                    <div className={`max-h-60 overflow-y-auto pr-1 mb-2 ${tables.length > 24 ? 'custom-scrollbar' : ''}`}>
-                        <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+                    {/* Grid layout of tables - compact with more tables per row */}
+                    <div className={`max-h-40 overflow-y-auto pr-1 mb-2 ${tables.length > 24 ? 'custom-scrollbar' : ''}`}>
+                        <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-1">
                             {renderTables}
                         </div>
                     </div>
                     
                     {/* Current selection display - more compact */}
                     {selectedTable && (
-                        <div className="bg-blue-50 p-1.5 rounded-lg border border-blue-200 text-center text-xs">
+                        <div className="bg-blue-50 p-1 rounded-lg border border-blue-200 text-center text-xs">
                             <p className="text-blue-800">
                                 <span className="font-bold">Table {selectedTable}</span> selected
                             </p>
