@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { getAllItems, createBill, updateBill, updateTable, getBillById } from '../api/api';
 
 // Create the context
-export const BillContext = createContext();
+const BillContext = createContext();
 
 // Create a custom hook to use the context
 export const useBill = () => useContext(BillContext);
@@ -279,7 +279,14 @@ export const BillProvider = ({ children }) => {
         );
       } else {
         // Add new item with quantity 1
-        updatedBill = [...prevBill, { ...item, quantity: 1 }];
+        // Make sure itemName is included
+        const newItem = { 
+          ...item, 
+          quantity: 1,
+          // Ensure itemName is set for validation
+          itemName: item.itemName || item.name || "Unknown Item" 
+        };
+        updatedBill = [...prevBill, newItem];
       }
       
       // For the first item added to a bill, don't update table status immediately
@@ -411,6 +418,19 @@ export const BillProvider = ({ children }) => {
     return await saveBill(receiptFormat);
   }, []);
 
+  // Generate a systematic bill number
+  const generateBillNumber = useCallback(() => {
+    const date = new Date();
+    const hours = date.getHours().toString().padStart(2, '0');
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    
+    // Format: T[table][hour][minute]
+    // If no table is selected yet, use T0 as prefix
+    const tablePrefix = selectedTable ? `T${selectedTable}` : 'T0';
+    
+    return `${tablePrefix}${hours}${minutes}`;
+  }, [selectedTable]);
+
   // Save bill to database without clearing
   const saveBill = useCallback(async (receiptFormat = 'detailed') => {
     if (!selectedTable || bill.length === 0) {
@@ -421,11 +441,11 @@ export const BillProvider = ({ children }) => {
     try {
       // Create a proper bill data structure to match our backend
       const billData = {
-        billNumber: savedBillNumber || `BILL-${Math.floor(Math.random() * 10000)}`,
+        billNumber: savedBillNumber || generateBillNumber(),
         tableNo: selectedTable,
         items: bill.map(item => ({
           itemId: item._id,
-          name: item.name,
+          name: item.itemName || "Item name missing",
           price: item.price,
           quantity: item.quantity
         })),
@@ -494,7 +514,7 @@ export const BillProvider = ({ children }) => {
       console.error('Error saving bill:', error);
       throw error;
     }
-  }, [bill, selectedTable, savedBillId, savedBillNumber, currentTableData, debouncedSaveToLocalStorage, batchUpdateBillState, updateCurrentTableStatus]);
+  }, [bill, selectedTable, savedBillId, savedBillNumber, currentTableData, debouncedSaveToLocalStorage, batchUpdateBillState, updateCurrentTableStatus, generateBillNumber]);
 
   // Clear the bill - optimized for performance
   const clearBill = useCallback(async () => {
@@ -584,11 +604,12 @@ export const BillProvider = ({ children }) => {
     savedBillId,
     tableBills,
     isTableSwitching,
-    cleanExpiredBills
+    cleanExpiredBills,
+    generateBillNumber
   }), [
     items, bill, selectedTable, currentTableData, setTableData, 
     addToBill, removeFromBill, clearBill, generateBill, saveBill, 
-    savedBillId, tableBills, isTableSwitching, cleanExpiredBills
+    savedBillId, tableBills, isTableSwitching, cleanExpiredBills, generateBillNumber
   ]);
 
   return (
@@ -598,5 +619,8 @@ export const BillProvider = ({ children }) => {
   );
 };
 
-// Export as both named and default export for backward compatibility
-export default BillContext;
+// Export as a named export for consistency
+export { BillContext };
+
+// Export the provider component as the default export
+export default BillProvider;

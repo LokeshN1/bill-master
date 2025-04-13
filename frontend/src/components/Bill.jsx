@@ -5,11 +5,23 @@ import { getCafeInfo } from '../api/api';
 import PrintableReceipt from './PrintableReceipt';
 import KOTReceipt from './KOTReceipt';
 
+// Generate a systematic bill number
+const generateBillNumber = () => {
+  const date = new Date();
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  
+  // Since we don't have direct access to the selected table here,
+  // we'll use T0 as a default prefix that will be replaced when
+  // the bill component gets the actual table number
+  return `T0${hours}${minutes}`;
+};
+
 const Bill = () => {
   const { bill, clearBill, saveBill, savedBillId, selectedTable } = useBill();
   const [cafeDetails, setCafeDetails] = useState({ name: '', address: '', phone: '', email: '' });
   const [loading, setLoading] = useState(true);
-  const [billNumber, setBillNumber] = useState(`BILL-${Math.floor(Math.random() * 1000)}`);
+  const [billNumber, setBillNumber] = useState(generateBillNumber());
   const [receiptFormat, setReceiptFormat] = useState('detailed'); // 'detailed' or 'simple'
   const [isSaving, setIsSaving] = useState(false);
   const [isPrintingKOT, setIsPrintingKOT] = useState(false);
@@ -49,8 +61,16 @@ const Bill = () => {
     if (savedBillId) {
       // Update the bill number to match the saved bill if it exists
       setBillNumber(bill && bill.billNumber ? bill.billNumber : billNumber);
+    } else {
+      // Update bill number if table changes but we don't have a saved bill
+      const date = new Date();
+      const hours = date.getHours().toString().padStart(2, '0');
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      
+      // Use the current tableNo for the bill number
+      setBillNumber(`T${tableNo}${hours}${minutes}`);
     }
-  }, [savedBillId, bill, billNumber]);
+  }, [savedBillId, bill, billNumber, tableNo]);
 
   // Safe printing function for detailed receipt
   const safePrintDetailed = useCallback(() => {
