@@ -4,13 +4,32 @@ import Bill from "../model/bill.model.js";
 export const createBill = async (req, res) => {
   try {
     const { billNumber, tableNo, items, totalAmount, receiptFormat } = req.body;
+    
+    // Log the request body for debugging
+    console.log("Creating bill with data:", JSON.stringify(req.body, null, 2));
 
     if (!tableNo || !items || items.length === 0) {
       return res.status(400).json({ message: "Table number and items are required" });
     }
 
+    // Check if all items have names
+    const itemsWithoutNames = items.filter(item => !item.name);
+    if (itemsWithoutNames.length > 0) {
+      console.error("Items missing names:", itemsWithoutNames);
+      // Add default names to items without names
+      itemsWithoutNames.forEach(item => {
+        item.name = "Item " + item.itemId || "Unknown Item";
+      });
+    }
+
     // Generate a bill number if not provided
-    const billNumberToUse = billNumber || `BILL-${Math.floor(Math.random() * 10000)}`;
+    let billNumberToUse = billNumber;
+    if (!billNumberToUse) {
+      const date = new Date();
+      const hours = date.getHours().toString().padStart(2, '0');
+      const minutes = date.getMinutes().toString().padStart(2, '0');
+      billNumberToUse = `T${tableNo}${hours}${minutes}`;
+    }
     
     // Calculate total amount if not provided
     let calculatedTotal = totalAmount;
@@ -30,7 +49,56 @@ export const createBill = async (req, res) => {
     res.status(201).json(savedBill);
   } catch (error) {
     console.error("Error creating bill:", error);
-    res.status(500).json({ message: "Internal Server Error" });
+    
+    // Check for duplicate key error
+    if (error.code === 11000) {
+      console.error("Duplicate key error. Details:", error.keyValue);
+      
+      // Try with a slightly modified bill number to make it unique
+      try {
+        // Generate a unique bill number
+        const date = new Date();
+        // Use the tableNo from req.body that was originally passed in
+        const reqTableNo = req.body.tableNo;
+        const uniqueBillNumber = `T${reqTableNo}${date.getHours()}${date.getMinutes()}${date.getSeconds()}`;
+        
+        // Create a new bill object since the previous one might be corrupted
+        const retryBill = new Bill({
+          billNumber: uniqueBillNumber,
+          tableNo: reqTableNo,
+          items: req.body.items,
+          totalAmount: calculatedTotal,
+          receiptFormat: req.body.receiptFormat || 'detailed'
+        });
+        
+        // Explicitly add billNo field to null out the old index value
+        if (error.keyPattern && error.keyPattern.billNo) {
+          // This is a direct MongoDB operation to work around the schema
+          retryBill.$__.$setCalled.add('billNo');
+          retryBill.$__.activePaths.states.modify.add('billNo');
+          retryBill.$__dirty();
+          retryBill._doc.billNo = uniqueBillNumber; // Set to a unique value instead of null
+        }
+        
+        const savedBill = await retryBill.save();
+        console.log("Successfully saved bill after fixing duplicate key error");
+        return res.status(201).json(savedBill);
+      } catch (retryError) {
+        console.error("Error in retry after duplicate key:", retryError);
+        return res.status(500).json({ 
+          message: "Error creating bill after fixing duplicate key",
+          details: retryError.message
+        });
+      }
+      
+      // If retry failed, return an error response
+      return res.status(400).json({ 
+        message: "A bill with this bill number already exists",
+        details: error.keyValue 
+      });
+    }
+    
+    res.status(500).json({ message: "Internal Server Error", details: error.message });
   }
 };
 
@@ -62,6 +130,8 @@ export const getBillById = async (req, res) => {
 // Update a bill by ID
 export const updateBill = async (req, res) => {
   try {
+    // No longer need to set billNo
+    
     const updatedBill = await Bill.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
     });
@@ -90,4 +160,15 @@ export const deleteBill = async (req, res) => {
     console.error("Error deleting bill:", error);
     res.status(500).json({ message: "Internal Server Error" });
   }
+};
+
+// Helper function to generate a systematic bill number
+const generateSystematicBillNumber = () => {
+  const date = new Date();
+  const hours = date.getHours().toString().padStart(2, '0');
+  const minutes = date.getMinutes().toString().padStart(2, '0');
+  
+  // In the backend, we don't know the table number yet when this function is called
+  // Use T0 as a default prefix - it should be overridden by the frontend's billNumber
+  return `T0${hours}${minutes}`;
 };

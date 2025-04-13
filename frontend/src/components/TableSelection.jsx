@@ -1,5 +1,13 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
 import { useBill } from '../context/BillContext';
+import { 
+  getAllTables, 
+  getTablesWithStatus,
+  createTable, 
+  deleteTable as deleteTableApi, 
+  bulkCreateTables 
+} from '../api/api';
+import './TableSelection.css';
 
 // Function to format table number, skipping 13 and handling special cases like 12A, 12B, etc.
 const formatTableNumber = (num) => {
@@ -57,10 +65,15 @@ const getNextSuffix = (currentSuffix) => {
 const getNextTableNumber = (tables) => {
     if (tables.length === 0) return 1;
     
+    // Extract tableNumber from DB objects if needed
+    const tableNumbers = tables.map(t => 
+        typeof t === 'object' && t.tableNumber !== undefined ? t.tableNumber : t
+    );
+    
     // First, let's check for table 12 variants specifically
     const table12Variants = [];
     
-    tables.forEach(t => {
+    tableNumbers.forEach(t => {
         // Check if it's a number 12 or string '12'
         if (t === 12 || t === '12') {
             table12Variants.push(t);
@@ -105,7 +118,9 @@ const getNextTableNumber = (tables) => {
     }
     
     // For regular table numbering, find max and add 1
-    const numericTables = tables.filter(t => typeof t === 'number' || (typeof t === 'string' && !isNaN(Number(t))));
+    const numericTables = tableNumbers.filter(t => 
+        typeof t === 'number' || (typeof t === 'string' && !isNaN(Number(t)))
+    );
     
     if (numericTables.length === 0) {
         return 1;
@@ -126,65 +141,217 @@ const getNextTableNumber = (tables) => {
     }
 };
 
+// Create a memoized Table component to prevent unnecessary re-renders
+const Table = memo(({ table, selectedTable, onTableClick, hasLocalBill }) => {
+  // Determine the class based on status and selection outside render to reduce calculations
+  // If there's a local bill, override the server status to always show as occupied
+  const tableClass = 
+    table.tableNumber === selectedTable ? 'table-card selected' : 
+    hasLocalBill || table.status === 'occupied' ? 'table-card occupied' : 
+    'table-card';
+
+  return (
+    <div 
+      className={tableClass}
+      onClick={() => onTableClick(table)}
+    >
+      <h3>T{table.tableNumber}</h3>
+      {(hasLocalBill || table.status === 'occupied') && <div className="status-indicator"></div>}
+    </div>
+  );
+});
+
+// Main TableSelection component
 const TableSelection = () => {
-    const { selectedTable, setSelectedTable, bill } = useBill();
+    const { selectedTable, setTableData, bill, currentTableData, tableBills, savedBillId, isTableSwitching } = useBill();
     const [tables, setTables] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [isManagingTables, setIsManagingTables] = useState(false);
     const [showBulkAddModal, setShowBulkAddModal] = useState(false);
     const [showCustomTableModal, setShowCustomTableModal] = useState(false);
     const [numTablesToAdd, setNumTablesToAdd] = useState(1);
     const [customTableName, setCustomTableName] = useState('');
+    const [error, setError] = useState(null);
     const bulkModalRef = useRef(null);
     const customModalRef = useRef(null);
+    const refreshTimerRef = useRef(null);
+    const lastTableUpdateRef = useRef(Date.now());
+    const tableDataCacheRef = useRef({});
+    const initialLoadCompleteRef = useRef(false);
     
-    // Initialize with 12 tables or load from localStorage if available
-    useEffect(() => {
-        const savedTables = localStorage.getItem('cafe-tables');
-        if (savedTables) {
-            setTables(JSON.parse(savedTables));
-        } else {
-            // Default: 12 tables, skipping 13
-            setTables([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15]);
-        }
-    }, []);
-    
-    // Save tables to localStorage whenever they change
-    useEffect(() => {
-        if (tables.length > 0) {
-            localStorage.setItem('cafe-tables', JSON.stringify(tables));
-        }
-    }, [tables]);
-    
-    // Close modals when clicking outside
-    useEffect(() => {
-        function handleClickOutside(event) {
-            if (bulkModalRef.current && !bulkModalRef.current.contains(event.target)) {
-                setShowBulkAddModal(false);
+    // Memoize this function to prevent recreating it on each render
+    const fetchTables = useCallback(async (silent = false) => {
+        // Skip frequent updates once initially loaded
+        if (silent && initialLoadCompleteRef.current) {
+            const now = Date.now();
+            // Only refresh every 30 seconds at most when in silent mode
+            if (now - lastTableUpdateRef.current < 30000) {
+                return;
             }
-            if (customModalRef.current && !customModalRef.current.contains(event.target)) {
-                setShowCustomTableModal(false);
-            }
+        }
+
+        if (!silent) {
+            setIsLoading(true);
         }
         
-        if (showBulkAddModal || showCustomTableModal) {
-            document.addEventListener("mousedown", handleClickOutside);
-        } else {
-            document.removeEventListener("mousedown", handleClickOutside);
+        try {
+            // Only use the full status endpoint on initial load, then use simpler endpoint
+            const data = initialLoadCompleteRef.current && silent
+                ? await getAllTables() // Faster API call for background refreshes
+                : await getTablesWithStatus(); // Detailed call for initial load
+            
+            // Apply local bill status overrides - this is crucial for performance
+            const tablesWithLocalStatus = data.map(table => {
+                // If we have a local bill for this table, it's always occupied regardless of backend status
+                const hasLocalBill = tableBills[table._id] && 
+                                    tableBills[table._id].billItems && 
+                                    tableBills[table._id].billItems.length > 0;
+                
+                if (hasLocalBill) {
+                    return {
+                        ...table,
+                        // Only override if the API disagrees with our local state
+                        status: 'occupied'
+                    };
+                }
+                
+                return table;
+            });
+            
+            // Update the cache with the latest table data
+            tablesWithLocalStatus.forEach(table => {
+                tableDataCacheRef.current[table._id] = table;
+            });
+            
+            setTables(tablesWithLocalStatus);
+            
+            // Only do currentTableData updates on initial load and explicit refreshes
+            if (!silent || !initialLoadCompleteRef.current) {
+                // If we have a selected table, make sure it's updated with latest data
+                if (selectedTable && currentTableData) {
+                    const updatedSelectedTable = tablesWithLocalStatus.find(t => 
+                        t.tableNumber === selectedTable && t._id === currentTableData._id
+                    );
+                    
+                    if (updatedSelectedTable) {
+                        // Only update if there's a critical change that's not already reflected
+                        const currentHasBill = bill.length > 0 || savedBillId;
+                        const serverSaysOccupied = updatedSelectedTable.status === 'occupied';
+                        
+                        // Only update when server state and local state disagree
+                        if ((currentHasBill && !serverSaysOccupied) || (!currentHasBill && serverSaysOccupied)) {
+                            setTableData(updatedSelectedTable);
+                        }
+                    }
+                }
+            }
+            
+            setError(null);
+            lastTableUpdateRef.current = Date.now();
+            initialLoadCompleteRef.current = true;
+        } catch (err) {
+            console.error('Error fetching tables:', err);
+            
+            if (!silent) {
+                setError('Failed to fetch tables. Using backup data if available.');
+                
+                try {
+                    // Simple fallback
+                    const fallbackData = await getAllTables();
+                    setTables(fallbackData);
+                    initialLoadCompleteRef.current = true;
+                } catch (fallbackErr) {
+                    console.error('Fallback also failed:', fallbackErr);
+                    if (Object.keys(tableDataCacheRef.current).length > 0) {
+                        setTables(Object.values(tableDataCacheRef.current));
+                    }
+                }
+            }
+        } finally {
+            if (!silent) {
+                setIsLoading(false);
+            }
         }
+    }, [selectedTable, currentTableData, setTableData, tableBills, bill, savedBillId]);
+
+    // Set up automatic refresh at regular intervals - but less frequent
+    useEffect(() => {
+        // Initial load
+        fetchTables();
+        
+        // Set up interval for background refresh every 30 seconds
+        refreshTimerRef.current = setInterval(() => {
+            fetchTables(true); // Silent refresh
+        }, 30000); // Increased to 30 seconds for better performance
         
         return () => {
-            document.removeEventListener("mousedown", handleClickOutside);
+            if (refreshTimerRef.current) {
+                clearInterval(refreshTimerRef.current);
+            }
         };
-    }, [showBulkAddModal, showCustomTableModal]);
-    
+    }, [fetchTables]);
+
+    // Handle table selection
+    const handleTableClick = useCallback((table) => {
+        // Prevent selecting the same table again or during table switching
+        if (
+            (selectedTable === table.tableNumber && table._id === currentTableData?._id) ||
+            isTableSwitching
+        ) {
+            return;
+        }
+        
+        // Apply local bill status before updating context
+        const hasLocalBill = tableBills[table._id] && 
+                           tableBills[table._id].billItems && 
+                           tableBills[table._id].billItems.length > 0;
+                           
+        const tableWithCorrectStatus = {
+            ...table,
+            // Use local state to determine status instead of waiting for API
+            status: hasLocalBill ? 'occupied' : table.status
+        };
+        
+        // Update the table data in the BillContext
+        setTableData(tableWithCorrectStatus);
+        
+        // Update cache
+        tableDataCacheRef.current[table._id] = tableWithCorrectStatus;
+    }, [selectedTable, currentTableData, setTableData, isTableSwitching, tableBills]);
+
     // Add a single new table
-    const addTable = () => {
-        const nextTableNumber = getNextTableNumber(tables);
-        setTables([...tables, nextTableNumber]);
+    const addTable = async () => {
+        try {
+            const nextTableNumber = getNextTableNumber(tables);
+            console.log("Attempting to add table with number:", nextTableNumber);
+            
+            if (!nextTableNumber) {
+                alert("Invalid table number. Please try again.");
+                return;
+            }
+            
+            const tableData = {
+                tableNumber: nextTableNumber,
+                status: 'available'
+            };
+            
+            const newTable = await createTable(tableData);
+            console.log("Table created successfully:", newTable);
+            setTables([...tables, newTable]);
+        } catch (err) {
+            console.error("Error adding table:", err);
+            
+            // More user-friendly error message
+            if (err.response && err.response.data) {
+                alert(`Failed to create new table: ${err.response.data.message || err.message}`);
+            } else {
+                alert("Failed to create new table. Please try again.");
+            }
+        }
     };
     
     // Add a custom named table
-    const addCustomTable = () => {
+    const addCustomTable = async () => {
         if (!customTableName.trim()) {
             alert('Please enter a table name');
             return;
@@ -193,7 +360,7 @@ const TableSelection = () => {
         const trimmedName = customTableName.trim();
         
         // Check for duplicate table names
-        if (tables.includes(trimmedName)) {
+        if (tables.some(t => t.tableNumber === trimmedName)) {
             alert('A table with this name already exists');
             return;
         }
@@ -217,43 +384,108 @@ const TableSelection = () => {
             }
         }
         
-        setTables([...tables, trimmedName]);
-        setCustomTableName('');
-        setShowCustomTableModal(false);
+        try {
+            console.log("Attempting to add custom table with number:", trimmedName);
+            
+            const tableData = {
+                tableNumber: trimmedName,
+                status: 'available'
+            };
+            
+            const newTable = await createTable(tableData);
+            console.log("Custom table created successfully:", newTable);
+            setTables([...tables, newTable]);
+            setCustomTableName('');
+            setShowCustomTableModal(false);
+        } catch (err) {
+            console.error("Error adding custom table:", err);
+            
+            // More user-friendly error message
+            if (err.response && err.response.data) {
+                alert(`Failed to create custom table: ${err.response.data.message || err.message}`);
+            } else {
+                alert("Failed to create custom table. Please try again.");
+            }
+        }
     };
     
     // Add multiple tables at once
-    const bulkAddTables = () => {
+    const bulkAddTables = async () => {
         if (numTablesToAdd <= 0 || numTablesToAdd > 100) return;
         
+        const tablesToCreate = [];
         let currentTables = [...tables];
-        const newTables = [];
         
         for (let i = 0; i < numTablesToAdd; i++) {
             const nextTable = getNextTableNumber(currentTables);
-            newTables.push(nextTable);
-            currentTables.push(nextTable);
+            if (!nextTable) {
+                alert("Error generating table numbers. Please try again.");
+                return;
+            }
+            
+            tablesToCreate.push({
+                tableNumber: nextTable,
+                status: 'available'
+            });
+            currentTables.push({ tableNumber: nextTable });
         }
         
-        setTables([...tables, ...newTables]);
-        setShowBulkAddModal(false);
-        setNumTablesToAdd(1);
+        console.log("Attempting to bulk create tables:", tablesToCreate.map(t => t.tableNumber));
+        
+        try {
+            const createdTables = await bulkCreateTables(tablesToCreate);
+            console.log("Tables created successfully:", createdTables);
+            setTables([...tables, ...createdTables]);
+            setShowBulkAddModal(false);
+            setNumTablesToAdd(1);
+        } catch (err) {
+            console.error("Error bulk adding tables:", err);
+            
+            // More user-friendly error message
+            if (err.response && err.response.data) {
+                alert(`Failed to create tables: ${err.response.data.message || err.message}`);
+            } else {
+                alert("Failed to create tables. Please try again.");
+            }
+        }
     };
     
     // Delete a table
-    const deleteTable = (tableNum) => {
+    const deleteTable = async (tableNum) => {
+        // Find the table object
+        const tableToDelete = tables.find(t => t.tableNumber === tableNum);
+        if (!tableToDelete) return;
+        
+        // Check if table has an active bill
+        const hasActiveBill = (tableToDelete.hasBill && tableToDelete.bill) || 
+                             (tableBills[tableToDelete._id] && 
+                              tableBills[tableToDelete._id].billItems && 
+                              tableBills[tableToDelete._id].billItems.length > 0);
+        
+        // Don't allow deleting if it has an active bill
+        if (hasActiveBill) {
+            alert("Cannot delete a table with an active bill. Please clear the bill first.");
+            return;
+        }
+        
         // Don't allow deleting selected table or if bill has items
-        if (tableNum === selectedTable && bill.length > 0) {
+        if (currentTableData && currentTableData._id === tableToDelete._id && bill.length > 0) {
             alert("Can't delete this table while it has items in the bill.");
             return;
         }
         
         // If deleting the selected table, clear selection
-        if (tableNum === selectedTable) {
-            setSelectedTable(null);
+        if (currentTableData && currentTableData._id === tableToDelete._id) {
+            setTableData(null);
         }
         
-        setTables(tables.filter(num => num !== tableNum));
+        try {
+            await deleteTableApi(tableToDelete._id);
+            setTables(tables.filter(t => t.tableNumber !== tableNum));
+        } catch (err) {
+            console.error("Error deleting table:", err);
+            alert("Failed to delete table. Please try again.");
+        }
     };
     
     // Toggle table management mode
@@ -271,7 +503,7 @@ const TableSelection = () => {
         for (let i = 0; i < numTablesToAdd; i++) {
             const nextTable = getNextTableNumber(previewTables);
             previewResults.push(nextTable);
-            previewTables.push(nextTable);
+            previewTables.push({ tableNumber: nextTable });
         }
         
         return previewResults.length > 0 
@@ -279,159 +511,214 @@ const TableSelection = () => {
             : '';
     };
 
+    // Render the table components efficiently 
+    const renderTables = useMemo(() => {
+        return tables.map((table) => {
+            // Check if this table has a local bill record which overrides server status
+            const hasLocalBill = tableBills[table._id] && 
+                               tableBills[table._id].billItems && 
+                               tableBills[table._id].billItems.length > 0;
+            
+            return (
+                <div key={table._id || table.tableNumber} className="relative">
+                    <Table
+                        table={table}
+                        selectedTable={selectedTable}
+                        onTableClick={handleTableClick}
+                        hasLocalBill={hasLocalBill}
+                    />
+                    
+                    {/* Delete button - only visible in manage mode */}
+                    {isManagingTables && (
+                        <button 
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                deleteTable(table.tableNumber);
+                            }}
+                            className={`absolute -top-1 -right-1 rounded-full w-5 h-5 flex items-center justify-center shadow-sm transition-colors ${
+                                hasLocalBill || table.status === 'occupied'
+                                    ? 'bg-gray-400 cursor-not-allowed' 
+                                    : 'bg-red-500 hover:bg-red-600 text-white'
+                            }`}
+                            title={(hasLocalBill || table.status === 'occupied') ? "Cannot delete table with active bill" : "Delete Table"}
+                            disabled={hasLocalBill || table.status === 'occupied'}
+                        >
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    )}
+                </div>
+            );
+        });
+    }, [tables, selectedTable, handleTableClick, isManagingTables, tableBills, deleteTable]);
+
+    // Show loading indicator
+    if (isLoading && tables.length === 0) {
+        return <div className="loading">Loading tables...</div>;
+    }
+
+    // Show error message
+    if (error && tables.length === 0) {
+        return <div className="error">{error}</div>;
+    }
+
     return (
-        <div className="bg-white p-4 rounded-lg shadow-md">
-            <div className="flex justify-between items-center mb-3">
-                <h2 className="text-xxl font-semibold text-gray-800">Select Table</h2>
-                <div className="flex gap-3">
+        <div className="bg-white p-3 rounded-lg shadow-md">
+            <div className="flex justify-between items-center mb-2">
+                <h2 className="text-lg font-semibold text-gray-800">Tables</h2>
+                <div className="flex gap-2">
                     <button
                         onClick={toggleManageMode}
-                        className={`py-2 px-4 rounded-md text-base font-medium flex items-center transition-colors ${
+                        className={`py-1 px-2 rounded-md text-sm font-medium flex items-center transition-colors ${
                             isManagingTables 
                                 ? 'bg-gray-200 text-gray-800' 
                                 : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
                         }`}
                         title={isManagingTables ? "Exit Management Mode" : "Manage Tables"}
                     >
-                        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                        {isManagingTables ? 'Done' : 'Manage'}
+                        {isManagingTables ? (
+                            <>
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                Close
+                            </>
+                        ) : (
+                            <>
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                </svg>
+                                Manage
+                            </>
+                        )}
                     </button>
+                    
                     {isManagingTables && (
-                        <div className="flex">
+                        <div className="flex gap-2">
                             <button
                                 onClick={() => setShowCustomTableModal(true)}
-                                className="bg-purple-500 hover:bg-purple-600 text-white py-2 px-4 rounded-md text-base font-medium flex items-center transition-colors mr-2"
+                                className="bg-purple-500 hover:bg-purple-600 text-white py-1 px-2 rounded-md text-sm font-medium flex items-center transition-colors"
                                 title="Add Custom Table"
                             >
-                                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                                 </svg>
                                 Custom
                             </button>
-                            <div className="flex">
-                                <button
-                                    onClick={addTable}
-                                    className="bg-green-500 hover:bg-green-600 text-white py-2 px-4 rounded-l-md text-base font-medium flex items-center transition-colors"
-                                    title="Add New Table"
-                                >
-                                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                    </svg>
-                                    Add
-                                </button>
-                                <button
-                                    onClick={() => setShowBulkAddModal(true)}
-                                    className="bg-green-500 hover:bg-green-600 text-white py-2 px-3 rounded-r-md text-base flex items-center transition-colors border-l border-green-600"
-                                    title="Add Multiple Tables"
-                                >
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                    </svg>
-                                </button>
-                            </div>
+                            <button
+                                onClick={() => setShowBulkAddModal(true)}
+                                className="bg-blue-500 hover:bg-blue-600 text-white py-1 px-2 rounded-md text-sm font-medium flex items-center transition-colors"
+                                title="Add Multiple Tables"
+                            >
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                                </svg>
+                                Bulk
+                            </button>
+                            <button
+                                onClick={addTable}
+                                className="bg-green-500 hover:bg-green-600 text-white py-1 px-2 rounded-md text-sm font-medium flex items-center transition-colors"
+                                title="Add Single Table"
+                            >
+                                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                                </svg>
+                                Add
+                            </button>
                         </div>
                     )}
                 </div>
             </div>
             
-            {/* Table count info */}
-            <div className="mb-2 text-xs text-gray-500 flex items-center">
-                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span>Total Tables: {tables.length}</span>
-            </div>
+            {error && (
+                <div className="bg-red-100 border border-red-400 text-red-700 px-3 py-2 rounded mb-3 text-sm">
+                    {error}
+                </div>
+            )}
             
-            {/* Grid layout of tables - medium sized with 8 tables per row with scrolling for many tables */}
-            <div className={`max-h-60 overflow-y-auto pr-1 mb-2 ${tables.length > 24 ? 'custom-scrollbar' : ''}`}>
-                <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-                    {tables.map((num) => (
-                        <div key={num} className="relative">
-                            <button 
-                                onClick={() => isManagingTables ? null : setSelectedTable(num)}
-                                className={`flex flex-col items-center justify-center py-1 px-1 rounded border transition-all h-16 w-full ${
-                                    selectedTable === num 
-                                        ? 'bg-blue-600 text-white border-blue-600' 
-                                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
-                                } ${isManagingTables ? 'cursor-default' : 'cursor-pointer'}`}
-                            >
-                                {/* Medium sized table icon */}
-                                <svg 
-                                    className="w-6 h-6 mb-0.5" 
-                                    viewBox="0 0 24 24" 
-                                    fill="none" 
-                                    stroke="currentColor" 
-                                    xmlns="http://www.w3.org/2000/svg"
-                                >
-                                    <rect x="3" y="8" width="18" height="12" rx="2" strokeWidth="2" />
-                                    <rect x="7" y="4" width="10" height="4" rx="1" strokeWidth="2" />
-                                </svg>
-                                <span className={`text-xs font-medium leading-none mt-1 ${typeof num === 'string' && num.length > 6 ? 'text-[10px]' : ''}`}>Table {num}</span>
-                            </button>
-                            
-                            {/* Delete button - only visible in manage mode */}
-                            {isManagingTables && (
-                                <button 
-                                    onClick={() => deleteTable(num)}
-                                    className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center shadow-sm hover:bg-red-600 transition-colors"
-                                    title="Delete Table"
-                                >
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            )}
+            {isLoading && tables.length === 0 ? (
+                <div className="py-4 flex justify-center items-center">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                </div>
+            ) : (
+                <>
+                    <div className="mb-1 text-xs text-gray-500 flex items-center">
+                        <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span>Total Tables: {tables.length}</span>
+                    </div>
+                    
+                    {/* Grid layout of tables - compact with more tables per row */}
+                    <div className={`max-h-40 overflow-y-auto pr-1 mb-2 ${tables.length > 24 ? 'custom-scrollbar' : ''}`}>
+                        <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 lg:grid-cols-12 gap-1">
+                            {renderTables}
                         </div>
-                    ))}
-                </div>
-            </div>
-            
-            {/* Current selection display - more compact */}
-            {selectedTable && (
-                <div className="bg-blue-50 p-1.5 rounded-lg border border-blue-200 text-center text-xs">
-                    <p className="text-blue-800">
-                        <span className="font-bold">Table {selectedTable}</span> selected
-                    </p>
-                </div>
+                    </div>
+                    
+                    {/* Current selection display - more compact */}
+                    {selectedTable && (
+                        <div className="bg-blue-50 p-1 rounded-lg border border-blue-200 text-center text-xs">
+                            <p className="text-blue-800">
+                                <span className="font-bold">Table {selectedTable}</span> selected
+                            </p>
+                        </div>
+                    )}
+                </>
             )}
             
             {/* Bulk Add Modal */}
             {showBulkAddModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-                    <div ref={bulkModalRef} className="bg-white rounded-lg shadow-xl p-4 max-w-sm w-full mx-4">
-                        <h3 className="text-lg font-semibold mb-3">Add Multiple Tables</h3>
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div 
+                        ref={bulkModalRef} 
+                        className="bg-white rounded-lg shadow-xl w-11/12 max-w-md p-5"
+                    >
+                        <h3 className="text-lg font-semibold mb-4">Add Multiple Tables</h3>
                         <div className="mb-4">
-                            <label className="block text-gray-700 text-sm font-medium mb-2">
-                                Number of tables to add:
+                            <label htmlFor="numTables" className="block text-sm font-medium text-gray-700 mb-1">
+                                Number of Tables to Add (1-100)
                             </label>
                             <input 
+                                id="numTables"
                                 type="number" 
-                                min="1" 
-                                max="100"
                                 value={numTablesToAdd}
-                                onChange={(e) => setNumTablesToAdd(parseInt(e.target.value) || 0)}
-                                className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                onChange={(e) => {
+                                    const value = parseInt(e.target.value, 10);
+                                    if (!isNaN(value) && value >= 1 && value <= 100) {
+                                        setNumTablesToAdd(value);
+                                    } else if (e.target.value === '') {
+                                        setNumTablesToAdd('');
+                                    }
+                                }}
+                                min="1"
+                                max="100"
+                                className="shadow-sm border border-gray-300 focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm rounded-md p-2"
                             />
-                            <p className="text-xs text-gray-500 mt-1">
-                                {numTablesToAdd > 0 && (
-                                    <>Adding {numTablesToAdd} table(s): {getTableAddPreview()}</>
-                                )}
-                                <span className="text-purple-600 block mt-1">Note: Table 13 will be skipped (12 → 12A, 12B, ... 12Z → 12AA, 12AB, ... → 14)</span>
-                            </p>
                         </div>
+                        
+                        {numTablesToAdd > 0 && (
+                            <div className="mt-2 mb-4 text-sm">
+                                <p className="text-gray-600">
+                                    Preview: Tables {getTableAddPreview()}
+                                </p>
+                            </div>
+                        )}
+                        
                         <div className="flex justify-end gap-2">
                             <button
-                                onClick={() => setShowBulkAddModal(false)}
+                                onClick={() => {
+                                    setShowBulkAddModal(false);
+                                    setNumTablesToAdd(1);
+                                }}
                                 className="px-3 py-1.5 border border-gray-300 rounded-md text-gray-700 text-sm hover:bg-gray-100"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={bulkAddTables}
-                                className="px-3 py-1.5 bg-green-500 text-white rounded-md text-sm hover:bg-green-600"
+                                className="px-3 py-1.5 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600"
                                 disabled={numTablesToAdd <= 0 || numTablesToAdd > 100}
                             >
                                 Add Tables
@@ -440,27 +727,29 @@ const TableSelection = () => {
                     </div>
                 </div>
             )}
-
+            
             {/* Custom Table Name Modal */}
             {showCustomTableModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-                    <div ref={customModalRef} className="bg-white rounded-lg shadow-xl p-4 max-w-sm w-full mx-4">
-                        <h3 className="text-lg font-semibold mb-3">Add Custom Table</h3>
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div 
+                        ref={customModalRef} 
+                        className="bg-white rounded-lg shadow-xl w-11/12 max-w-md p-5"
+                    >
+                        <h3 className="text-lg font-semibold mb-4">Add Custom Named Table</h3>
                         <div className="mb-4">
-                            <label className="block text-gray-700 text-sm font-medium mb-2">
-                                Custom table name:
+                            <label htmlFor="customTableName" className="block text-sm font-medium text-gray-700 mb-1">
+                                Table Name or Number
                             </label>
                             <input 
+                                id="customTableName"
                                 type="text" 
-                                placeholder="e.g., VIP, Patio, Bar Counter"
                                 value={customTableName}
                                 onChange={(e) => setCustomTableName(e.target.value)}
-                                className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                placeholder="e.g., Patio1, VIP, 12A, etc."
+                                className="shadow-sm border border-gray-300 focus:ring-purple-500 focus:border-purple-500 block w-full sm:text-sm rounded-md p-2"
                             />
-                            <p className="text-xs text-gray-500 mt-1">
-                                Enter a descriptive name for your special table.
-                            </p>
                         </div>
+                        
                         <div className="flex justify-end gap-2">
                             <button
                                 onClick={() => {
@@ -486,4 +775,4 @@ const TableSelection = () => {
     );
 };
 
-export default TableSelection;
+export default memo(TableSelection);

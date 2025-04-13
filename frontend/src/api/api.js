@@ -119,4 +119,70 @@ export const updateCafeInfo = async (infoData) => {
     console.error("Error updating cafe info", error);
     throw error;
   }
+};
+
+// Fetch all tables
+export const getAllTables = async () => {
+  try {
+    const response = await axiosInstance.get(`/tables`);
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching tables", error);
+    throw error;
+  }
+};
+
+// Fetch tables with bill status
+export const getTablesWithStatus = async () => {
+  try {
+    const response = await axiosInstance.get(`/tables/with-status`);
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching tables with status", error);
+    throw error;
+  }
+};
+
+// Create a new table
+export const createTable = async (tableData) => {
+  try {
+    const response = await axiosInstance.post(`/tables`, tableData);
+    return response.data;
+  } catch (error) {
+    console.error("Error creating table", error);
+    throw error;
+  }
+};
+
+// Bulk create tables
+export const bulkCreateTables = async (tablesData) => {
+  try {
+    const response = await axiosInstance.post(`/tables/bulk`, { tables: tablesData });
+    return response.data;
+  } catch (error) {
+    console.error("Error bulk creating tables", error);
+    throw error;
+  }
+};
+
+// Update an existing table
+export const updateTable = async (id, tableData) => {
+  try {
+    const response = await axiosInstance.put(`/tables/${id}`, tableData);
+    return response.data;
+  } catch (error) {
+    console.error("Error updating table", error);
+    throw error;
+  }
+};
+
+// Delete a table
+export const deleteTable = async (id) => {
+  try {
+    const response = await axiosInstance.delete(`/tables/${id}`);
+    return response.data;
+  } catch (error) {
+    console.error("Error deleting table", error);
+    throw error;
+  }
 }; 
